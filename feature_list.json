@@ -11,5 +11,97 @@
       "blocked"
     ]
   },
-  "tareas": []
+  "tareas": [
+    {
+      "name": "productos-flujo-base",
+      "title": "Crear y ver productos",
+      "description": "Primera tarea HTTP. Implementa POST /productos (creación) y GET /productos, GET /productos/:id (lectura). Campos del producto: nombre (obligatorio, string), descripcion (string opcional), precioUnitario (número > 0, obligatorio), stock (entero >= 0, default 0), fotos (array de URLs strings, opcional, default []), estado (default \"activo\", valores permitidos \"activo\"/\"inactivo\"). Repositorio en memoria con IDs string estables (no numéricos autoincrementales expuestos). Crea el andamiaje HTTP (app.js, server.js, middlewares noEncontrado y manejadorErrores) según docs/estructura.md y el contrato HTTP de docs/http.md.",
+      "acceptance": [
+        "POST /productos con datos válidos responde 201 y el JSON del producto creado con id string, fechas ISO (creadoEn/actualizadoEn) y estado \"activo\" por defecto",
+        "POST /productos sin nombre o con precioUnitario <= 0 o no numérico responde 400 con { \"error\": \"...\" }",
+        "GET /productos responde 200 con array JSON y Content-Type application/json; charset=utf-8",
+        "GET /productos/:id responde 200 con el producto o 404 con { \"error\": \"...\" } si no existe",
+        "Los archivos de capas siguen la convención: productoRoutes.js, productoController.js, productoService.js, productoRepository.js, domain/producto.js",
+        "scripts/smoke.js cubre POST, GET colección, GET por id y al menos un caso 400 y un caso 404",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "productos-editar-baja",
+      "title": "Editar y dar de baja productos",
+      "description": "Implementa PATCH /productos/:id (edición parcial del producto ya existente) y DELETE /productos/:id (baja lógica). PATCH acepta cualquier subconjunto de: nombre, descripcion, precioUnitario (número > 0), stock (entero >= 0), fotos (array de URLs strings), estado (\"activo\"/\"inactivo\"); actualiza actualizadoEn con fecha ISO UTC; 400 ante campo inválido o tipo incorrecto; 404 si el producto no existe. DELETE no borra nada: cambia estado a \"inactivo\" y devuelve 204 sin cuerpo; 404 si no existe. Mantiene las capas y la convención de nombres existentes (reglas en domain/, orquestación en services/, HTTP en controllers/routes).",
+      "acceptance": [
+        "PATCH /productos/:id con campos válidos responde 200 con el producto actualizado y actualizadoEn refrescado",
+        "PATCH /productos/:id con precioUnitario <= 0 o tipos inválidos (ej. stock string, fotos no-array) responde 400 con { \"error\": \"...\" }",
+        "PATCH y DELETE sobre un id inexistente responde 404 con { \"error\": \"...\" }",
+        "DELETE /productos/:id responde 204 sin cuerpo y en adelante el producto sigue apareciendo en GET /productos con estado \"inactivo\" (baja lógica)",
+        "scripts/smoke.js extiende la cobertura: PATCH válido, PATCH 400, PATCH/DELETE 404, DELETE 204 y verificación del estado inactivo",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "productos-variantes",
+      "title": "Variantes de producto con atributos libres",
+      "description": "Implementa la gestión de variantes de un producto existente. Cada variante: atributos libres como array [{ nombre, valor }] (mínimo uno, strings), stock (entero >= 0, obligatorio) y precioUnitario opcional (número > 0); si no se indica, la variante hereda el precioUnitario del producto. Nueva ruta POST /productos/:id/variantes (201 / 404 si el producto no existe / 400 si la variante es inválida) y el JSON del producto incluye siempre su array variantes (default []). Reglas en domain/servicio, HTTP en controllers/routes, manteniendo capas y convención de nombres.",
+      "acceptance": [
+        "POST /productos/:id/variantes con atributos válidos responde 201 con la variante creada (id string, atributos, stock, precioUnitario y fechas ISO) y el producto incluido la muestra en su array variantes",
+        "Una variante sin precioUnitario hereda el precioUnitario del producto; con precioUnitario propio, usa ese valor",
+        "POST /productos/:id/variantes sin atributos o con stock < 0 o precioUnitario <= 0 responde 400 con { \"error\": \"...\" }",
+        "POST /productos/:id/variantes sobre un producto inexistente responde 404 con { \"error\": \"...\" }",
+        "GET /productos/:id devuelve el producto con su array variantes (vacío si no tiene)",
+        "scripts/smoke.js extiende la cobertura: crear variante, herencia de precio, precio propio, 400 y 404",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "bd-infraestructura",
+      "title": "Conexión a PostgreSQL y esquema de productos/variantes",
+      "description": "Instala la librería pg y dotenv; crea src/repositories/pool.js con el pool de conexiones configurado desde DATABASE_URL (archivo .env con valor por defecto local postgres://matias@localhost:5432/justina; .env en .gitignore y .env.example con la variable documentada). Crea db/schema.sql con las tablas productos (id varchar PK, nombre, descripcion, precio_unitario numeric > 0, stock int >= 0, fotos jsonb default [], estado activo/inactivo, creado_en/actualizado_en timestamptz) y variantes (id varchar PK, producto_id FK a productos ON DELETE CASCADE, atributos jsonb, stock int >= 0, precio_unitario numeric nullable que significa heredar el del producto, creado_en). Agrega script npm run bd:init que aplica db/schema.sql de forma idempotente (CREATE TABLE IF NOT EXISTS) y no borra datos por defecto. Ningún endpoint cambia: el repositorio actual sigue en memoria en esta tarea.",
+      "acceptance": [
+        "npm run bd:init aplica el esquema y puede repetirse sin error (idempotente); las tablas productos y variantes existen en la BD justina con sus columnas y PK/FK",
+        ".env contiene DATABASE_URL apuntando a postgres://matias@localhost:5432/justina, está en .gitignore y existe .env.example documentando la variable",
+        "src/repositories/pool.js exporta un pool pg configurado desde DATABASE_URL y no lo usa ninguna capa que no sea repositories/",
+        "package.json tiene pg y dotenv en dependencies y el script bd:init",
+        "./init.sh termina verde (lint + smoke; los endpoints siguen usando el repositorio en memoria)",
+        "Los nombres siguen la convención: snake_case en la BD (columnas y tablas), camelCase en el código"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "productos-esquema-ddl-usuario",
+      "title": "Adoptar el DDL del usuario y adaptar productos/variantes a él",
+      "description": "Reemplaza db/schema.sql por el DDL completo del usuario (roles, categoria, valor_atributo, direccion, usuario, configuracion_web, banners, usuario_token, usuario_direccion, producto, especificaciones, review, variante, imagenes_variante, valor_variante, lista_favoritos, favorito_item, carrito, carrito_item, pedido, item_pedido, pedido_estado_historial, pago, envio), hace bd:init idempotente sobre él y descarta las tablas minimas anteriores (productos/variantes en plural). Adapta el repositorio de productos (SQL parametrizado vía pool.js/pg) a las tablas producto/variante/valor_atributo/valor_variante/imagenes_variante y ajusta el contrato HTTP: producto sin precioUnitario ni fotos propios (precio derivado = mínimo de sus variantes, null si no tiene), variante con precioUnitario obligatorio (> 0, sin herencia), sku obligatorio y único (409 si duplicado), atributos libres [{nombre, valor}] persistidos automáticamente en valor_atributo/valor_variante, fotos [{url, esPrincipal}] en imagenes_variante (esPrincipal default: primera), ids BIGSERIAL expuestos como string, estado API activo/inactivo mapeado a boolean activo (mantener baja lógica DELETE). Actualiza smoke (todos los casos previos adaptados al nuevo contrato: GET colección/id, POST sin precio obligatorio, PATCH, DELETE baja lógica, 400/404, 409 por sku duplicado) y verifica persistencia con reinicio.",
+      "acceptance": [
+        "npm run bd:init aplica el DDL del usuario sin error dos veces seguidas (idempotente); las tablas minimas anteriores ya no existen y las del DDL sí (verificación con psql -d justina -c '\\dt')",
+        "POST /productos sin precioUnitario ni fotos responde 201 y el producto se devuelve sin precioUnitario propio (precio derivado null) ni array fotos",
+        "POST /productos/:id/variantes con precioUnitario, sku, stock y atributos responde 201; la variante muestra su precioUnitario, sku, stock, fotos y atributos; el producto muestra precioUnitario = mínimo de sus variantes",
+        "POST /productos/:id/variantes sin precioUnitario o con stock < 0 o sin sku responde 400; con sku duplicado responde 409; producto inexistente 404",
+        "PATCH y DELETE conservan el comportamiento previo (baja lógica: estado \"inactivo\" mapeado a activo=false)",
+        "Los ids de producto y variante aparecen como string en el JSON (ej. \"17\")",
+        "Los atributos de variante se persisten en valor_atributo/valor_variante (psql lo confirma) y se reconstruyen en el JSON",
+        "Fotos de variante quedan en imagenes_variante con es_principal correcto (primera por defecto)",
+        "Solo src/repositories/ importa pg/pool; SQL 100% parametrizado",
+        "scripts/smoke.js: toda la batería previa adaptada al nuevo contrato, para contra la BD real, con stub de limpieza al arrancar",
+        "Persistencia verificada con reinicio del server (producto+variante intactos)",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "bd-configuracion-credenciales",
+      "title": "Configuración de conexión a la BD por variables (.env)",
+      "description": "Reemplaza el connectionString único por una configuración por partes en src/repositories/pool.js para portabilidad entre PCs: se sostiene DATABASE_URL si está definida (prioridad, usa connectionString) y, si no, arma el Pool con variables separadas: DB_HOST (default /var/run/postgresql, socket Unix), DB_PORT (default 5432), DB_USUARIO (default matias), DB_CONTRASENA (opcional; si falta no se pasa, para auth peer por socket) y DB_NOMBRE (default justina). Actualiza .env (valores de esta PC) y .env.example (documenta ambas formas con ejemplos comentados: socket local y TCP con usuario/contraseña para otra PC). smoke y bdInit siguen pasando por el mismo mecanismo.",
+      "acceptance": [
+        "src/repositories/pool.js portable: respeta DATABASE_URL si está y, si no, compone host/puerto/usuario/contraseña/nombre desde variables separadas, sin usuario hardcodeado en el código",
+        ".env con los valores de esta PC (socket, sin contraseña) y ./init.sh termina verde (lint + smoke contra la BD)",
+        ".env.example documenta ambas formas: local por socket y TCP con usuario y contraseña explícitos",
+        "En esta PC sigue funcionando la autenticación peer por unix socket (smoke verde)",
+        "Ningún archivo fuera de src/repositories/pool.js, .env y .env.example sufre cambios funcionales"
+      ],
+      "status": "done"
+    }
+  ]
 }

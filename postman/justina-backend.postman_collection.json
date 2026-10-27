@@ -1,0 +1,116 @@
+{
+  "info": {
+    "name": "justina-backend",
+    "description": "Colección Postman del backend Justina (catálogo: productos y variantes sobre PostgreSQL). Asegurate de tener la API corriendo con `npm run dev` en http://localhost:3000.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "b7e4c2a1-5f0d-49a1-9f6e-justina0001"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "idProducto",
+      "value": "1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Productos",
+      "item": [
+        {
+          "name": "Crear producto",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/productos",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Remera Justina\",\n  \"descripcion\": \"Algodón premium\",\n  \"marca\": \"Justina\"\n}"
+            },
+            "description": "Crea un producto. Sin precio ni fotos: todo eso vive en sus variantes. Status esperado: 201."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const cuerpo = pm.response.json();",
+                  "if (cuerpo && cuerpo.id) {",
+                  "  pm.collectionVariables.set('idProducto', String(cuerpo.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar productos",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/productos",
+            "description": "Devuelve el catálogo completo como array JSON (incluye inactivos). Esperado: 200."
+          }
+        },
+        {
+          "name": "Obtener producto por id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/productos/{{idProducto}}",
+            "description": "Detalle del producto con su array variantes (precio, sku, stock, atributos, fotos). El precio del producto es derivado: mínimo de sus variantes, null si no tiene. Esperado: 200; 404 si no existe."
+          }
+        },
+        {
+          "name": "Editar producto (parcial)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/productos/{{idProducto}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"descripcion\": \"Algodón premium, edición 2026\"\n}"
+            },
+            "description": "Edición parcial: cualquier subconjunto de nombre, descripcion, marca, estado (\"activo\"/\"inactivo\"). Esperado: 200; 400 si inválido; 404 si no existe."
+          }
+        },
+        {
+          "name": "Dar de baja producto",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/productos/{{idProducto}}",
+            "description": "Baja lógica: no borra nada, marca activo=false (estado \"inactivo\"). Esperado: 204 sin cuerpo; 404 si no existe."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Variantes",
+      "item": [
+        {
+          "name": "Crear variante",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/productos/{{idProducto}}/variantes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"REM-M\",\n  \"precioUnitario\": 5500,\n  \"stock\": 10,\n  \"atributos\": [\n    { \"nombre\": \"talla\", \"valor\": \"M\" },\n    { \"nombre\": \"color\", \"valor\": \"celeste\" }\n  ],\n  \"fotos\": [\n    { \"url\": \"https://ejemplo.com/remera-m.jpg\", \"esPrincipal\": true },\n    { \"url\": \"https://ejemplo.com/remera-m-atras.jpg\" }\n  ]\n}"
+            },
+            "description": "Crea una variante del producto. precioUnitario y sku son obligatorios (sku único: 409 si duplicado); atributos libres se persisten en valor_atributo/valor_variante; fotos van a imagenes_variante con esPrincipal (por defecto la primera). Esperado: 201."
+          }
+        }
+      ]
+    }
+  ]
+}
