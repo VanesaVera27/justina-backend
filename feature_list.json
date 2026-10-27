@@ -1,0 +1,15 @@
+{
+  "project": "justina-backend",
+  "description": "Plantilla Node.js + Express por capas (dominio puro, repositorios, servicios, controladores y rutas) sin frameworks de tests, con smoke ejecutable y una convencion HTTP propia para la API.",
+  "rules": {
+    "one_task_in_progress": true,
+    "require_tests_to_close": false,
+    "valid_tarea_status": [
+      "pending",
+      "in_progress",
+      "done",
+      "blocked"
+    ]
+  },
+  "tareas": []
+}
