@@ -37,10 +37,12 @@
    funciones puras, sin efectos secundarios y sin dependencias del entorno.
    Los servicios coordinan esas reglas con los repositorios.
 
-4. **Solo las dependencias del template.** `express` como dependencia de
-   runtime y `oxlint` como tooling. No hay framework de tests, ORM, `dotenv`,
-   `cors`, logger ni validador externo. Si una feature requiere una librería
-   nueva, primero se discute (estado `blocked`).
+4. **Dependencias justificadas.** `express`, `pg` y `dotenv` son dependencias
+   de runtime; `oxlint` es tooling. `multer` se agrega para recibir
+   `multipart/form-data` en `POST /imagenes`, con límite de tamaño y validación
+   del archivo. Las imágenes se guardan y sirven localmente desde `uploads/`.
+   No hay framework de tests, ORM, `cors`, logger ni validador externo. Si una
+   feature requiere otra librería, primero se discute (estado `blocked`).
 
 5. **Inmutabilidad.** No mutar los datos que llegan por parámetro. Agregar o
    quitar elementos devuelve **nuevas** estructuras (`map`, `filter`, spread).

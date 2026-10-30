@@ -81,7 +81,56 @@ respuestas.
   base de datos.
 - Los controladores no importan repositorios: siempre pasan por un servicio.
 
-## 7. Smoke
+## 7. Categorías y productos
+
+- `GET /categorias` devuelve un array de `{ id, nombre, esDestacada }`.
+- `POST /categorias` recibe `nombre` y `esDestacada` y responde `201` con la
+  categoría creada.
+- `PATCH /categorias/:id` acepta cambios parciales de `nombre` y
+  `esDestacada`; `DELETE /categorias/:id` responde `204` si la categoría no
+  tiene productos asociados, `404` si no existe o `409` con `{ "error": "..." }`
+  si todavía tiene productos. No se borran ni desasocian productos en cascada.
+- Los productos exponen `categoriaId` como ID string o `null`. Al crear y
+  editar se acepta una categoría existente o `null`; el borrado de una
+  categoría exige reasignar esos productos o establecer su `categoriaId` a
+  `null` antes de eliminarla.
+- `DELETE /productos/:id` es una baja lógica: marca el producto como
+  `inactivo` y responde `204`; no lo elimina de la base. Responde `404` si no
+  existe.
+- `DELETE /productos/:productoId/variantes/:varianteId` elimina la variante
+  indicada y sus datos dependientes (atributos e imágenes) con respuesta
+  `204`; responde `404` si el producto o la variante de ese producto no existe.
+- Las variantes de los productos incluyen sus arrays `atributos` y `fotos`.
+
+## 8. Imágenes
+
+- `POST /imagenes` recibe `multipart/form-data` con el campo `archivo` y
+  responde `201` con `{ "nombre": "<nombre-original>", "url": "/uploads/<nombre-original>" }`.
+- Se aceptan PNG, JPEG, GIF, WebP y AVIF de hasta 10 MB. Los archivos quedan
+  disponibles en la carpeta local `uploads/`, servidos desde esa URL en el
+  mismo servidor. La extensión del nombre debe coincidir con el contenido.
+  Los nombres deben ser únicos: si ya existe un archivo con ese nombre,
+  responde `409` y no lo sobrescribe.
+- `POST /productos/:id/variantes` y
+  `PATCH /productos/:productoId/variantes/:varianteId` reciben
+  `multipart/form-data`: campos `sku`, `stock`, `precioUnitario` y
+  `atributos` (array JSON serializado), y archivos repetidos bajo `fotos`.
+  `POST` requiere al menos un archivo; `PATCH` permite no enviar ninguno.
+  Cada imagen puede pesar hasta 10 MB; se admiten hasta 10 archivos
+  por solicitud y tipos PNG, JPEG, GIF, WebP y AVIF, validados también por su
+  firma binaria.
+- Las imágenes de variantes se guardan bajo `uploads/productos/` con nombres
+  UUID generados por el servidor. La base guarda solo su URL y el indicador
+  `esPrincipal`; la primera imagen enviada queda como principal. Las URLs
+  `/uploads/productos/<nombre>` sirven directamente al frontend.
+- En `PATCH`, si no se envían archivos se conservan las fotos actuales; si se
+  envía uno o más archivos, se reemplaza el conjunto de fotos de la variante.
+- La carga anterior por nombre en JSON sigue admitida por compatibilidad para
+  crear variantes; los nuevos flujos del panel deben enviar archivos
+  multipart. Los campos `stock` y `precioUnitario` se reciben como texto
+  multipart y se validan como números.
+
+## 9. Smoke
 
 - `scripts/smoke.js` debe cubrir cada endpoint nuevo: status,
   `Content-Type`, forma del body y al menos un caso de error.

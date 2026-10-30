@@ -6,11 +6,18 @@ function lanzarError(status, mensaje) {
   throw error
 }
 
+function validarCategoriaId(categoriaId) {
+  if (categoriaId === null) return null
+  if (typeof categoriaId === 'string' && /^[1-9]\d*$/.test(categoriaId)) return categoriaId
+  if (Number.isInteger(categoriaId) && categoriaId > 0) return String(categoriaId)
+  lanzarError(400, 'categoriaId debe ser un id positivo o null')
+}
+
 // El producto ya no tiene precioUnitario ni fotos propios: el precio es
 // derivado (minimo de sus variantes, null si no tiene) y las fotos viven en
 // las variantes. Dominio puro: valida y arma el dato de dominio.
 export function crearProducto(datos = {}) {
-  const { nombre, descripcion = null, marca = null, estado = 'activo' } = datos
+  const { nombre, descripcion = null, marca = null, estado = 'activo', categoriaId = null } = datos
 
   if (typeof nombre !== 'string' || nombre.trim() === '') {
     lanzarError(400, 'El nombre es obligatorio')
@@ -35,6 +42,7 @@ export function crearProducto(datos = {}) {
     nombre: nombre.trim(),
     descripcion,
     marca: typeof marca === 'string' && marca.trim() !== '' ? marca.trim() : null,
+    categoriaId: validarCategoriaId(categoriaId),
     estado,
     variantes: [],
     creadoEn: ahora,
@@ -76,28 +84,50 @@ export function validarVariante(datos = {}) {
     lanzarError(400, 'Los atributos deben ser un array de elementos { nombre, valor } con strings')
   }
 
-  if (
-    !Array.isArray(fotos) ||
-    fotos.some((foto) => (
-      typeof foto !== 'object' ||
-      foto === null ||
-      Array.isArray(foto) ||
-      typeof foto.url !== 'string' ||
-      foto.url.trim() === ''
-    ))
-  ) {
-    lanzarError(400, 'Las fotos deben ser un array de elementos { url } con strings')
+  if (!Array.isArray(fotos)) {
+    lanzarError(400, 'Las fotos deben ser un array')
   }
+
+  const fotosValidadas = fotos.map((foto) => {
+    if (typeof foto !== 'object' || foto === null || Array.isArray(foto)) {
+      lanzarError(400, 'Cada foto debe incluir una url o un nombre de archivo')
+    }
+
+    const referencias = ['url', 'nombre'].filter((campo) => campo in foto)
+    if (referencias.length !== 1) {
+      lanzarError(400, 'Cada foto debe incluir exactamente una url o un nombre de archivo')
+    }
+
+    const referencia = referencias[0]
+    if (typeof foto[referencia] !== 'string' || foto[referencia].trim() === '') {
+      lanzarError(400, `El campo "${referencia}" de cada foto debe ser un string no vacio`)
+    }
+
+    if (
+      referencia === 'nombre' &&
+      (
+        foto.nombre.trim() === '.' ||
+        foto.nombre.trim() === '..' ||
+        foto.nombre.includes('/') ||
+        foto.nombre.includes('\\') ||
+        foto.nombre.includes('\0')
+      )
+    ) {
+      lanzarError(400, 'El nombre de la imagen debe ser un nombre de archivo, sin rutas')
+    }
+
+    return {
+      [referencia]: foto[referencia].trim(),
+      esPrincipal: typeof foto.esPrincipal === 'boolean' ? foto.esPrincipal : false,
+    }
+  })
 
   return {
     sku: sku.trim(),
     stock,
     precioUnitario,
     atributos: atributos.map((atributo) => ({ nombre: atributo.nombre.trim(), valor: atributo.valor.trim() })),
-    fotos: fotos.map((foto) => ({
-      url: foto.url.trim(),
-      esPrincipal: typeof foto.esPrincipal === 'boolean' ? foto.esPrincipal : false,
-    })),
+    fotos: fotosValidadas,
   }
 }
 
@@ -106,6 +136,7 @@ const CAMPOS_EDITABLES = new Set([
   'descripcion',
   'marca',
   'estado',
+  'categoriaId',
 ])
 
 export function editarProducto(producto, cambios = {}) {
@@ -147,6 +178,10 @@ export function editarProducto(producto, cambios = {}) {
       lanzarError(400, 'El estado debe ser "activo" o "inactivo"')
     }
     editado.estado = cambios.estado
+  }
+
+  if ('categoriaId' in cambios) {
+    editado.categoriaId = validarCategoriaId(cambios.categoriaId)
   }
 
   editado.actualizadoEn = new Date().toISOString()

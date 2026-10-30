@@ -1,4 +1,9 @@
 export default function manejadorErrores(error, req, res, _next) {
+  if (res.headersSent) {
+    _next(error)
+    return
+  }
+
   const status = Number.isInteger(error.status) ? error.status : 500
 
   if (error.type === 'entity.parse.failed' || error instanceof SyntaxError) {

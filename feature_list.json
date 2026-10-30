@@ -102,6 +102,129 @@
         "Ningún archivo fuera de src/repositories/pool.js, .env y .env.example sufre cambios funcionales"
       ],
       "status": "done"
+    },
+    {
+      "name": "categorias-crud",
+      "title": "Implementar el CRUD de categorías",
+      "description": "Implementa GET /categorias, POST /categorias, PATCH /categorias/:id y DELETE /categorias/:id sobre la tabla categoria del DDL. La respuesta usa { id, nombre, esDestacada }; el borrado físico debe dejar que la FK producto.id_categoria aplique ON DELETE SET NULL. Mantén las capas, parametriza SQL y usa los errores HTTP definidos en docs/http.md.",
+      "acceptance": [
+        "GET /categorias devuelve 200 y un array de { id: string, nombre, esDestacada: boolean }",
+        "POST /categorias valida nombre y esDestacada, responde 201 con la categoría creada",
+        "PATCH /categorias/:id aplica cambios parciales a nombre y esDestacada, devuelve la categoría actualizada y responde 404 si no existe",
+        "DELETE /categorias/:id borra la categoría, responde 204 sin cuerpo y la base de datos deja producto.id_categoria en NULL",
+        "scripts/smoke.js verifica los endpoints, validaciones y la nulidad de la categoría de un producto tras borrarla",
+        "./init.sh termina verde"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "productos-categoria-id",
+      "title": "Asociar productos con categorías",
+      "description": "Extiende POST /productos y PATCH /productos/:id para aceptar categoriaId nullable, y GET /productos y GET /productos/:id para devolverlo. Al borrar una categoría, la relación queda null por la FK existente. Conserva el contrato vigente de productos y variantes.",
+      "acceptance": [
+        "POST /productos acepta categoriaId como id existente o null y lo devuelve como categoriaId string o null",
+        "PATCH /productos/:id acepta categoriaId existente o null y devuelve la relación actualizada",
+        "GET /productos y GET /productos/:id incluyen categoriaId en cada producto",
+        "Una categoriaId inexistente o inválida produce 400 con { \"error\": \"...\" }",
+        "scripts/smoke.js cubre creación, actualización, lectura y categoría null",
+        "./init.sh termina verde"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "imagenes-multipart",
+      "title": "Recibir imágenes por multipart",
+      "description": "Implementa POST /imagenes para recibir multipart/form-data con el campo archivo, guardar la imagen en disco local y devolver una URL pública bajo /uploads. El usuario eligió almacenamiento local; usa una dependencia multipart mantenida y límites razonables para los archivos.",
+      "acceptance": [
+        "POST /imagenes recibe un archivo en el campo archivo y responde 201 con { \"url\": \"...\" }",
+        "Las solicitudes sin archivo o con multipart inválido responden con error JSON apropiado",
+        "La URL devuelta permite acceder a la imagen almacenada",
+        "scripts/smoke.js cubre carga válida y casos de error",
+        "./init.sh termina verde"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "variantes-atributos-nombre",
+      "title": "Preservar el nombre de atributos de variantes",
+      "description": "El contrato permite atributos { nombre, valor }, pero el DDL original de valor_variante solo relaciona valor_atributo.valor y pierde nombre al leer desde la base. Agrega una extensión idempotente valor_variante.nombre, conserva el fallback nombre=valor para filas históricas y devuelve los atributos originales al leer.",
+      "acceptance": [
+        "POST /productos/:id/variantes persiste nombre y valor de cada atributo",
+        "GET /productos y GET /productos/:id reconstruyen atributos con los nombres y valores originales",
+        "Los atributos se conservan tras reiniciar el servidor",
+        "scripts/smoke.js verifica la forma exacta { nombre, valor } en el POST y en las lecturas",
+        "./init.sh termina verde"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "fotos-variantes-google-drive",
+      "title": "Resolver fotos de variantes desde Google Drive",
+      "description": "Permite que POST /productos/:id/variantes reciba fotos referenciadas por nombre o id de Google Drive. Busca los nombres dentro de GOOGLE_DRIVE_FOLDER_ID, rechaza ausencias con 404 y nombres duplicados con 409, persiste referencias servibles por backend y expone las imágenes privadas mediante streaming autenticado de solo lectura.",
+      "acceptance": [
+        "Las fotos de variantes aceptan { nombre, esPrincipal } y { id, esPrincipal }, conservando compatibilidad con { url, esPrincipal }",
+        "Una búsqueda por nombre consulta solo hijos directos de GOOGLE_DRIVE_FOLDER_ID; 0 coincidencias da 404 y más de 1 da 409",
+        "Las referencias por id solo se resuelven si el archivo pertenece a la carpeta configurada o a una subcarpeta",
+        "Las URLs de respuesta permiten mostrar la imagen desde /imagenes/drive/:id sin hacer pública la carpeta ni concatenar nombres en URLs de Drive",
+        "La configuración de Google Drive y el contrato de fotos están documentados; el smoke cubre validación de referencias",
+        "./init.sh termina verde"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "fotos-variantes-almacenamiento-local",
+      "title": "Resolver fotos de variantes desde almacenamiento local",
+      "description": "Guarda las imágenes subidas en uploads/ con el nombre original seguro, rechaza nombres ya ocupados sin sobrescribir archivos y permite que POST /productos/:id/variantes resuelva { nombre, esPrincipal } buscando el archivo local. Retira la integración y dependencias de Google Drive.",
+      "acceptance": [
+        "POST /imagenes guarda el archivo validado bajo su nombre original y devuelve nombre y URL pública",
+        "Una carga con nombre ya existente responde 409 sin sobrescribir la imagen",
+        "POST /productos/:id/variantes acepta nombre, valida que el archivo exista localmente y devuelve su URL /uploads/",
+        "Un nombre no encontrado responde 404 y las rutas de archivos no pueden escapar de uploads/",
+        "La documentación y el smoke describen y verifican el flujo local sin dependencias de Google Drive",
+        "./init.sh termina verde"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "bajas-panel-productos",
+      "title": "Implementar bajas desde el panel de productos",
+      "description": "Implementa DELETE /productos/:productoId/variantes/:varianteId con verificación de pertenencia al producto; conserva DELETE /productos/:productoId como baja lógica; bloquea DELETE /categorias/:categoriaId cuando hay productos asociados con HTTP 409 y un mensaje claro. Todos los borrados exitosos responden 204 y los recursos inexistentes 404.",
+      "acceptance": [
+        "DELETE variante responde 204 sin body, elimina solo la variante perteneciente al producto indicado y responde 404 ante producto o variante inexistente/no perteneciente",
+        "DELETE producto marca activo=false y responde 204; el producto sigue existiendo como inactivo; un id inexistente responde 404",
+        "DELETE categoría asociada responde 409 con { error }, sin borrar categoría ni modificar productos",
+        "DELETE categoría sin productos asociados responde 204 y categoría inexistente responde 404",
+        "scripts/smoke.js cubre las bajas exitosas y los casos 404 y 409",
+        "./init.sh termina verde"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "fotos-variantes-multipart",
+      "title": "Aceptar fotos multipart en variantes",
+      "description": "Adapta POST y PATCH de variantes para recibir multipart/form-data con campos de variante, atributos como JSON y archivos repetidos bajo fotos. Guarda imágenes validadas con nombres UUID en uploads/productos/, persiste únicamente sus URLs e indicador esPrincipal y conserva fotos en PATCH sin archivos.",
+      "acceptance": [
+        "POST /productos/:productoId/variantes acepta campos multipart y uno o más archivos bajo fotos; devuelve fotos con URLs /uploads/productos y una foto principal",
+        "PATCH /productos/:productoId/variantes/:varianteId actualiza campos y atributos; sin archivos conserva fotos y con archivos reemplaza el conjunto",
+        "Los archivos se validan por tipo, firma binaria, tamaño máximo de 10 MB y máximo de 10 archivos por solicitud",
+        "Las imágenes se guardan en uploads/productos con nombres generados; PostgreSQL persiste solo URLs y es_principal",
+        "Archivos inválidos y JSON de atributos malformado responden errores 400/413 claros",
+        "scripts/smoke.js valida respuesta, persistencia, URLs servibles, conservación/reemplazo y errores",
+        "./init.sh termina verde"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "persistir-url-imagenes-seed",
+      "title": "Verificar y corregir URLs de imágenes de ejemplo",
+      "description": "Confirma que las fotos multipart de variantes persisten en imagenes_variante solo como URL y es_principal, y actualiza db/inserts.sql para usar una URL local existente para la remera, quitando las rutas de imágenes de ejemplo que no sirven archivos del backend.",
+      "acceptance": [
+        "El smoke consulta imagenes_variante y compara URL/es_principal persistidos con la respuesta de creación de variante",
+        "db/inserts.sql registra /uploads/remera.jpg para REM-OV-NEG-M y no conserva rutas placeholder /images de las otras variantes seed",
+        "La imagen referenciada existe en uploads/ y es accesible por el static /uploads",
+        "Lint y verificación no destructiva terminan correctamente"
+      ],
+      "status": "done"
     }
   ]
 }

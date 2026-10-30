@@ -1,4 +1,4 @@
-import { crearUnProducto, obtenerProductos, obtenerProductoPorId, editarProductoExistente, darBajaProducto, agregarVarianteAProducto } from '../services/productoService.js'
+import { crearUnProducto, obtenerProductos, obtenerProductoPorId, editarProductoExistente, darBajaProducto, agregarVarianteAProducto, actualizarVarianteDeProducto, quitarVarianteDeProducto as quitarVarianteDeProductoServicio } from '../services/productoService.js'
 
 export async function crearProducto(req, res) {
   res.status(201).json(await crearUnProducto(req.body))
@@ -17,7 +17,21 @@ export async function editarProducto(req, res) {
 }
 
 export async function crearVarianteDeProducto(req, res) {
-  res.status(201).json(await agregarVarianteAProducto(req.params.id, req.body))
+  res.status(201).json(await agregarVarianteAProducto(req.params.id, req.body, req.files ?? []))
+}
+
+export async function editarVarianteDeProducto(req, res) {
+  res.status(200).json(await actualizarVarianteDeProducto(
+    req.params.productoId,
+    req.params.varianteId,
+    req.body,
+    req.files ?? [],
+  ))
+}
+
+export async function quitarVarianteDeProducto(req, res) {
+  await quitarVarianteDeProductoServicio(req.params.productoId, req.params.varianteId)
+  res.status(204).send()
 }
 
 export async function darDeBajaProducto(req, res) {

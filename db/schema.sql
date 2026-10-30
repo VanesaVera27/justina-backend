@@ -167,12 +167,15 @@ CREATE TABLE IF NOT EXISTS valor_variante (
     id_valor_variante BIGINT NOT NULL,
     id_variante BIGINT NOT NULL,
     id_valor_atributo INT NOT NULL,
+    nombre TEXT,
     PRIMARY KEY (id_valor_variante, id_variante),
     CONSTRAINT fk_vvar_variante FOREIGN KEY (id_variante)
         REFERENCES variante (id_variante) ON DELETE CASCADE,
     CONSTRAINT fk_vvar_atributo FOREIGN KEY (id_valor_atributo)
         REFERENCES valor_atributo (id_atributo) ON UPDATE CASCADE
 );
+
+ALTER TABLE valor_variante ADD COLUMN IF NOT EXISTS nombre TEXT;
 
 -- 4. LISTA DE FAVORITOS Y CARRITO
 -- -----------------------------------------------------------------------------
