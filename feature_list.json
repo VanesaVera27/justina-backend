@@ -225,6 +225,38 @@
         "Lint y verificación no destructiva terminan correctamente"
       ],
       "status": "done"
+    },
+    {
+      "name": "producto-foto-portada",
+      "title": "Exponer y validar la foto de portada del producto",
+      "description": "Agrega fotoPortadaUrl nullable al producto y expón su lectura y escritura en GET/PATCH /productos. En edición, null solicita el comportamiento automático y una URL no nula debe pertenecer a una foto existente de una variante del mismo producto. Al reemplazar o quitar una foto de variante, limpia la portada si la URL dejó de existir.",
+      "acceptance": [
+        "El DDL agrega foto_portada_url de forma idempotente y el dominio/repositorio mapean fotoPortadaUrl en creación, lectura y edición",
+        "PATCH /productos/:id admite fotoPortadaUrl string o null; rechaza valores inválidos y URLs que no sean fotos de variantes del producto",
+        "GET y PATCH /productos exponen fotoPortadaUrl",
+        "Reemplazar o borrar la variante que contiene la foto de portada la limpia, sin afectar portadas que sigan existiendo",
+        "scripts/smoke.js verifica selección válida, rechazo por pertenencia, null y limpieza al reemplazar/eliminar",
+        "./init.sh termina verde"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "variantes-galeria-fotos-patch",
+      "title": "Galería final de fotos en PATCH de variante",
+      "description": "Extiende PATCH /productos/:productoId/variantes/:varianteId para que, además de los campos actuales, acepte un campo fotos (array JSON, también como texto multipart) con la galería final y ordenada de la variante. Cada elemento debe incluir exactamente una referencia más esPrincipal opcional: { url, esPrincipal } para conservar una foto existente de esa variante, o { archivo: <índice base 0>, esPrincipal } para referenciar un archivo nuevo subido en la misma request bajo el campo multipart fotos. Reglas: la url debe pertenecer a la variante; el índice debe ser entero >= 0 y menor que la cantidad de archivos, sin repetirse; esPrincipal debe ser booleano si se envía; como máximo una foto puede quedar como principal y, si ninguna lo está, la primera de la lista queda principal; fotos: [] elimina todas. Se rechazan con 400 elementos inválidos, referencias duplicadas o índices fuera de rango. Al persistir se deja exactamente la galería indicada (borrando las fotos no incluidas), se descartan los archivos subidos que no fueron referenciados y se limpia fotoPortadaUrl si la foto deja de existir. Sin el campo fotos, el PATCH conserva el comportamiento actual: sin archivos mantiene las fotos, con archivos reemplaza el conjunto por los archivos en orden. Responde 200 con la variante actualizada y sus fotos finales. Actualizar docs/http.md y scripts/smoke.js.",
+      "acceptance": [
+        "PATCH multipart con fotos: [{ url: <foto existente>, esPrincipal: true }, { archivo: 0, esPrincipal: false }] y un archivo nuevo responde 200 con ambas fotos en ese orden, conserva la existente y persiste la nueva; la base contiene exactamente esas dos filas",
+        "PATCH con fotos: [] elimina todas las fotos de la variante en la base y devuelve fotos: []",
+        "PATCH con fotos que omite una foto existente elimina esa fila de imagenes_variante; los archivos subidos no referenciados no quedan asociados ni generan filas",
+        "Una url que no pertenece a la variante, un índice de archivo fuera de rango o repetido, una referencia con url y archivo a la vez, y dos esPrincipal:true responden 400 con { \"error\": \"...\" }",
+        "Si no se marca ninguna principal en una lista no vacía, la primera foto de la galería queda como principal; nunca hay más de una principal",
+        "Si la variante tenía fotoPortadaUrl apuntando a una foto que la galería final elimina, el producto queda con fotoPortadaUrl null; si la foto se conserva, la portada no cambia",
+        "PATCH sin campo fotos mantiene el comportamiento actual: sin archivos conserva las fotos y con archivos reemplaza el conjunto por los enviados",
+        "docs/http.md documenta la galería final, el índice base 0, las validaciones y el comportamiento sin fotos",
+        "scripts/smoke.js cubre galería mixta existente+nueva, eliminación, lista vacía, principal por defecto, errores de pertenencia/índice/principal duplicada y limpieza de fotoPortadaUrl",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
     }
   ]
 }

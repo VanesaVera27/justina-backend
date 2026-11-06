@@ -1,4 +1,4 @@
-import { crearProducto as crearProductoDominio, editarProducto as editarProductoDominio, validarVariante as validarVarianteDominio, conVariantes } from '../domain/producto.js'
+import { crearProducto as crearProductoDominio, editarProducto as editarProductoDominio, validarVariante as validarVarianteDominio, validarGaleriaFotos, conVariantes } from '../domain/producto.js'
 import { validarImagen } from '../domain/imagen.js'
 import { buscarProductoPorId, crearProducto, guardarProducto, listarProductos, agregarVarianteAProducto as agregarVarianteAProductoRepositorio, actualizarVariante as actualizarVarianteRepositorio, borrarVariante as borrarVarianteRepositorio } from '../repositories/productoRepository.js'
 import { guardarFotosDeVariante, descartarFotosDeVariante } from '../repositories/imagenRepository.js'
@@ -28,12 +28,12 @@ function convertirNumero(datos, campo) {
   return numero
 }
 
-function normalizarCamposVariante(datos, parcial) {
+function normalizarCamposVariante(datos) {
   if (typeof datos !== 'object' || datos === null || Array.isArray(datos)) {
     lanzarError(400, 'El formulario debe incluir los campos de la variante')
   }
 
-  const camposPermitidos = new Set(['sku', 'stock', 'precioUnitario', 'atributos', ...(!parcial ? ['fotos'] : [])])
+  const camposPermitidos = new Set(['sku', 'stock', 'precioUnitario', 'atributos', 'fotos'])
   const desconocidos = Object.keys(datos).filter((campo) => !camposPermitidos.has(campo))
   if (desconocidos.length > 0) {
     lanzarError(400, `Campo no permitido en la variante: "${desconocidos[0]}"`)
@@ -88,12 +88,19 @@ export async function obtenerProductoPorId(id) {
 export async function editarProductoExistente(id, cambios) {
   const producto = await obtenerProductoPorId(id)
   const editado = editarProductoDominio(producto, cambios)
+  if (
+    Object.hasOwn(cambios, 'fotoPortadaUrl') &&
+    editado.fotoPortadaUrl !== null &&
+    !producto.variantes.some((variante) => variante.fotos.some((foto) => foto.url === editado.fotoPortadaUrl))
+  ) {
+    lanzarError(400, 'La fotoPortadaUrl debe ser una foto de una variante del producto')
+  }
   return conVariantes(await guardarProducto(conVariantes(editado)))
 }
 
 export async function agregarVarianteAProducto(id, datos, archivos = []) {
   const producto = await obtenerProductoPorId(id)
-  const campos = normalizarCamposVariante(datos, false)
+  const campos = normalizarCamposVariante(datos)
   const variante = validarVarianteDominio({ ...campos, fotos: archivos.length > 0 ? [] : campos.fotos })
   const fotosGuardadas = archivos.length > 0
     ? await guardarFotosDeVariante(validarArchivos(archivos))
@@ -114,7 +121,12 @@ export async function actualizarVarianteDeProducto(productoId, varianteId, datos
   const existente = producto.variantes.find((variante) => variante.id === String(varianteId))
   if (!existente) lanzarError(404, 'Variante no encontrada en el producto')
 
-  const cambios = normalizarCamposVariante(datos, true)
+  const cambios = normalizarCamposVariante(datos)
+  const tieneFotos = Object.hasOwn(cambios, 'fotos')
+  const galeria = tieneFotos
+    ? validarGaleriaFotos(cambios.fotos, existente.fotos.map((foto) => foto.url), archivos.length)
+    : null
+
   const variante = validarVarianteDominio({
     sku: Object.hasOwn(cambios, 'sku') ? cambios.sku : existente.sku,
     stock: Object.hasOwn(cambios, 'stock') ? cambios.stock : existente.stock,
@@ -125,23 +137,44 @@ export async function actualizarVarianteDeProducto(productoId, varianteId, datos
 
   const fotosGuardadas = archivos.length > 0
     ? await guardarFotosDeVariante(validarArchivos(archivos))
-    : existente.fotos
+    : []
+
+  let fotosFinales = existente.fotos
+  let fotosNoReferenciadas = []
+  if (galeria) {
+    const archivosUsados = new Set()
+    fotosFinales = galeria.map((foto) => {
+      if (!Object.hasOwn(foto, 'archivo')) return { url: foto.url, esPrincipal: foto.esPrincipal }
+      archivosUsados.add(foto.archivo)
+      return { url: fotosGuardadas[foto.archivo].url, esPrincipal: foto.esPrincipal }
+    })
+    fotosNoReferenciadas = fotosGuardadas.filter((_, indice) => !archivosUsados.has(indice))
+  } else if (archivos.length > 0) {
+    fotosFinales = fotosGuardadas
+  }
+
+  let actualizada
   try {
-    const actualizada = await actualizarVarianteRepositorio(
+    actualizada = await actualizarVarianteRepositorio(
       producto.id,
       varianteId,
-      { ...variante, fotos: fotosParaPersistencia(fotosGuardadas) },
+      { ...variante, fotos: fotosParaPersistencia(fotosFinales) },
       {
         actualizarAtributos: Object.hasOwn(cambios, 'atributos'),
-        reemplazarFotos: archivos.length > 0,
+        reemplazarFotos: tieneFotos || archivos.length > 0,
       },
     )
-    if (!actualizada) lanzarError(404, 'Variante no encontrada en el producto')
-    return actualizada
   } catch (error) {
-    if (archivos.length > 0) await descartarFotosDeVariante(fotosGuardadas)
+    if (fotosGuardadas.length > 0) await descartarFotosDeVariante(fotosGuardadas)
     throw error
   }
+
+  if (!actualizada) {
+    if (fotosGuardadas.length > 0) await descartarFotosDeVariante(fotosGuardadas)
+    lanzarError(404, 'Variante no encontrada en el producto')
+  }
+  if (fotosNoReferenciadas.length > 0) await descartarFotosDeVariante(fotosNoReferenciadas)
+  return actualizada
 }
 
 export async function quitarVarianteDeProducto(productoId, varianteId) {

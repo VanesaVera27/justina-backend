@@ -14,6 +14,23 @@ function construirAtributos(atributosPorVariante, idVariante) {
   }))
 }
 
+async function limpiarFotoPortadaSiNoExiste(cliente, productoId) {
+  await cliente.query(
+    `UPDATE producto p
+     SET foto_portada_url = NULL
+     WHERE p.id_producto = $1
+       AND p.foto_portada_url IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1
+         FROM variante v
+         JOIN imagenes_variante i ON i.id_variante = v.id_variante
+         WHERE v.id_producto = p.id_producto
+           AND i.url = p.foto_portada_url
+       )`,
+    [productoId],
+  )
+}
+
 function construirFotos(fotosPorVariante, idVariante) {
   return (fotosPorVariante.get(idVariante) ?? []).map((fila) => ({
     url: fila.url,
@@ -95,6 +112,7 @@ function filasAProducto(filaProducto, { filas = [], atributosPorVariante = new M
     descripcion: filaProducto.descripcion,
     marca: filaProducto.marca,
     categoriaId: filaProducto.id_categoria == null ? null : String(filaProducto.id_categoria),
+    fotoPortadaUrl: filaProducto.foto_portada_url ?? null,
     precioUnitario: precioDerivado,
     estado: filaProducto.activo ? 'activo' : 'inactivo',
     creadoEn: filaProducto.fecha_creacion.toISOString(),
@@ -142,10 +160,10 @@ async function guardarAtributosVariante(cliente, idVariante, atributos) {
 
 export async function crearProducto(producto) {
   const resultado = await pool.query(
-    `INSERT INTO producto (nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria`,
-    [producto.nombre, producto.descripcion, producto.marca, producto.estado === 'activo', producto.creadoEn, producto.actualizadoEn, producto.categoriaId],
+    `INSERT INTO producto (nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url`,
+    [producto.nombre, producto.descripcion, producto.marca, producto.estado === 'activo', producto.creadoEn, producto.actualizadoEn, producto.categoriaId, producto.fotoPortadaUrl],
   ).catch((error) => {
     throw errorDesdePostgres(error, {
       '23503': { status: 400, texto: 'categoriaId no existe' },
@@ -158,7 +176,7 @@ export async function crearProducto(producto) {
 
 export async function listarProductos() {
   const resultado = await pool.query(
-    'SELECT id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria FROM producto ORDER BY fecha_creacion, id_producto',
+    'SELECT id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url FROM producto ORDER BY fecha_creacion, id_producto',
   )
   const cargadas = await cargarVariantesDeProductos(resultado.rows.map((fila) => String(fila.id_producto)))
   return resultado.rows.map((fila) => filasAProducto(fila, cargadas))
@@ -166,7 +184,7 @@ export async function listarProductos() {
 
 export async function buscarProductoPorId(id) {
   const resultado = await pool.query(
-    'SELECT id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria FROM producto WHERE id_producto = $1',
+    'SELECT id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url FROM producto WHERE id_producto = $1',
     [id],
   )
   if (resultado.rows.length === 0) return null
@@ -177,9 +195,9 @@ export async function buscarProductoPorId(id) {
 export async function guardarProducto(producto) {
   const resultado = await pool.query(
     `UPDATE producto
-     SET nombre = $2, descripcion = $3, marca = $4, activo = $5, fecha_modificacion = $6, id_categoria = $7
+     SET nombre = $2, descripcion = $3, marca = $4, activo = $5, fecha_modificacion = $6, id_categoria = $7, foto_portada_url = $8
      WHERE id_producto = $1`,
-    [producto.id, producto.nombre, producto.descripcion, producto.marca, producto.estado === 'activo', producto.actualizadoEn, producto.categoriaId],
+    [producto.id, producto.nombre, producto.descripcion, producto.marca, producto.estado === 'activo', producto.actualizadoEn, producto.categoriaId, producto.fotoPortadaUrl],
   ).catch((error) => {
     throw errorDesdePostgres(error, {
       '23503': { status: 400, texto: 'categoriaId no existe' },
@@ -218,7 +236,6 @@ export async function agregarVarianteAProducto(productoId, variante) {
       )
       fotos.push({ url: foto.url, esPrincipal: indice === indiceEfectivo })
     }
-
     await cliente.query('COMMIT')
     return {
       id: String(filaVariante.id_variante),
@@ -273,6 +290,7 @@ export async function actualizarVariante(productoId, varianteId, variante, opcio
         )
         fotos.push({ url: foto.url, esPrincipal: indice === indiceEfectivo })
       }
+      await limpiarFotoPortadaSiNoExiste(cliente, productoId)
     }
 
     await cliente.query('COMMIT')
@@ -296,9 +314,22 @@ export async function actualizarVariante(productoId, varianteId, variante, opcio
 }
 
 export async function borrarVariante(productoId, varianteId) {
-  const resultado = await pool.query(
-    'DELETE FROM variante WHERE id_producto = $1 AND id_variante = $2 RETURNING id_variante',
-    [productoId, varianteId],
-  )
-  return resultado.rowCount === 1
+  const cliente = await pool.connect()
+  try {
+    await cliente.query('BEGIN')
+    const resultado = await cliente.query(
+      'DELETE FROM variante WHERE id_producto = $1 AND id_variante = $2 RETURNING id_variante',
+      [productoId, varianteId],
+    )
+    if (resultado.rowCount === 1) {
+      await limpiarFotoPortadaSiNoExiste(cliente, productoId)
+    }
+    await cliente.query('COMMIT')
+    return resultado.rowCount === 1
+  } catch (error) {
+    await cliente.query('ROLLBACK')
+    throw error
+  } finally {
+    cliente.release()
+  }
 }

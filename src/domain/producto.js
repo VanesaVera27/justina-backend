@@ -43,6 +43,7 @@ export function crearProducto(datos = {}) {
     descripcion,
     marca: typeof marca === 'string' && marca.trim() !== '' ? marca.trim() : null,
     categoriaId: validarCategoriaId(categoriaId),
+    fotoPortadaUrl: null,
     estado,
     variantes: [],
     creadoEn: ahora,
@@ -131,12 +132,86 @@ export function validarVariante(datos = {}) {
   }
 }
 
+// Galeria final de fotos de una variante en PATCH: cada elemento referencia
+// una foto existente ({ url }) o un archivo nuevo ({ archivo: indice base 0 }).
+export function validarGaleriaFotos(fotos, urlsExistentes, cantidadArchivos) {
+  if (!Array.isArray(fotos)) {
+    lanzarError(400, 'Las fotos deben ser un array')
+  }
+
+  if (fotos.length === 0) return []
+
+  const urlsValidas = new Set(urlsExistentes)
+  const referenciasUsadas = new Set()
+  let cantidadPrincipales = 0
+
+  const normalizadas = fotos.map((foto, posicion) => {
+    if (typeof foto !== 'object' || foto === null || Array.isArray(foto)) {
+      lanzarError(400, `La foto ${posicion} debe ser un objeto con url o archivo`)
+    }
+
+    const camposDesconocidos = Object.keys(foto).filter((campo) => !['url', 'archivo', 'esPrincipal'].includes(campo))
+    if (camposDesconocidos.length > 0) {
+      lanzarError(400, `La foto ${posicion} tiene un campo no permitido: "${camposDesconocidos[0]}"`)
+    }
+
+    const tieneUrl = Object.hasOwn(foto, 'url')
+    const tieneArchivo = Object.hasOwn(foto, 'archivo')
+    if (tieneUrl === tieneArchivo) {
+      lanzarError(400, `La foto ${posicion} debe incluir exactamente una referencia: url o archivo`)
+    }
+
+    if (Object.hasOwn(foto, 'esPrincipal') && typeof foto.esPrincipal !== 'boolean') {
+      lanzarError(400, `esPrincipal de la foto ${posicion} debe ser booleano`)
+    }
+
+    let normalizada
+    let referencia
+    if (tieneUrl) {
+      if (typeof foto.url !== 'string' || foto.url.trim() === '') {
+        lanzarError(400, `La url de la foto ${posicion} debe ser un string no vacio`)
+      }
+      const url = foto.url.trim()
+      if (!urlsValidas.has(url)) {
+        lanzarError(400, `La foto ${posicion} no pertenece a la variante`)
+      }
+      referencia = `url:${url}`
+      normalizada = { url, esPrincipal: foto.esPrincipal === true }
+    } else {
+      if (!Number.isInteger(foto.archivo) || foto.archivo < 0 || foto.archivo >= cantidadArchivos) {
+        lanzarError(400, `El indice de archivo de la foto ${posicion} esta fuera de rango`)
+      }
+      referencia = `archivo:${foto.archivo}`
+      normalizada = { archivo: foto.archivo, esPrincipal: foto.esPrincipal === true }
+    }
+
+    if (referenciasUsadas.has(referencia)) {
+      lanzarError(400, `La foto ${posicion} esta repetida`)
+    }
+    referenciasUsadas.add(referencia)
+
+    if (normalizada.esPrincipal) cantidadPrincipales += 1
+    return normalizada
+  })
+
+  if (cantidadPrincipales > 1) {
+    lanzarError(400, 'Solo una foto puede ser principal')
+  }
+
+  if (cantidadPrincipales === 0) {
+    normalizadas[0].esPrincipal = true
+  }
+
+  return normalizadas
+}
+
 const CAMPOS_EDITABLES = new Set([
   'nombre',
   'descripcion',
   'marca',
   'estado',
   'categoriaId',
+  'fotoPortadaUrl',
 ])
 
 export function editarProducto(producto, cambios = {}) {
@@ -182,6 +257,20 @@ export function editarProducto(producto, cambios = {}) {
 
   if ('categoriaId' in cambios) {
     editado.categoriaId = validarCategoriaId(cambios.categoriaId)
+  }
+
+  if ('fotoPortadaUrl' in cambios) {
+    if (
+      cambios.fotoPortadaUrl !== null &&
+      (
+        typeof cambios.fotoPortadaUrl !== 'string' ||
+        cambios.fotoPortadaUrl.trim() === '' ||
+        cambios.fotoPortadaUrl.trim().length > 500
+      )
+    ) {
+      lanzarError(400, 'La fotoPortadaUrl debe ser un string de hasta 500 caracteres o null')
+    }
+    editado.fotoPortadaUrl = cambios.fotoPortadaUrl === null ? null : cambios.fotoPortadaUrl.trim()
   }
 
   editado.actualizadoEn = new Date().toISOString()

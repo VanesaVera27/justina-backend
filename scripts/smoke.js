@@ -3,7 +3,7 @@
 // Corre contra la BD real (contrato del DDL oficial): garantiza el esquema y
 // limpia producto CASCADE al arrancar.
 import { once } from 'node:events'
-import { readFile, unlink } from 'node:fs/promises'
+import { readFile, readdir, unlink } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import 'dotenv/config'
@@ -222,6 +222,7 @@ try {
     verificar(body.nombre === 'Mate imperial' && body.marca === 'Justina', 'POST /productos debería devolver nombre y marca')
     verificar(body.precioUnitario === null, 'el producto sin variantes debería exponer precioUnitario null')
     verificar(body.categoriaId === categoriaCreada.id, 'POST /productos debería devolver categoriaId')
+    verificar(body.fotoPortadaUrl === null, 'el producto nuevo debería exponer fotoPortadaUrl null')
     verificar(body.estado === 'activo', 'POST /productos debería default a estado "activo"')
     verificar(!Number.isNaN(Date.parse(body.creadoEn)) && body.creadoEn.endsWith('Z'), 'creadoEn debería ser ISO UTC')
     verificar(body.actualizadoEn === body.creadoEn, 'actualizadoEn debería coincidir con creadoEn al crear')
@@ -257,6 +258,7 @@ try {
     verificar(res.status === 200, `GET /productos/:id esperaba 200, recibió ${res.status}`)
     verificar(body.id === creado.id && body.nombre === 'Mate imperial', 'GET /productos/:id debería devolver el producto creado')
     verificar(body.categoriaId === categoriaCreada.id, 'GET /productos/:id debería incluir categoriaId')
+    verificar(body.fotoPortadaUrl === null, 'GET /productos/:id debería incluir fotoPortadaUrl null')
     verificar(Array.isArray(body.variantes) && body.variantes.length === 0, 'GET /productos/:id debería incluir variantes como array vacío por defecto')
   }
 
@@ -371,6 +373,48 @@ try {
     primeraVariante = body
   }
 
+  {
+    const urlPortada = primeraVariante.fotos[0].url
+    const { res, body } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fotoPortadaUrl: urlPortada }),
+    })
+    verificar(res.status === 200 && body.fotoPortadaUrl === urlPortada, 'PATCH debería guardar una foto de variante como portada')
+    const { body: productoListado } = await fetchJson(base, '/productos')
+    verificar(
+      productoListado.find((producto) => producto.id === creado.id)?.fotoPortadaUrl === urlPortada,
+      'GET /productos debería exponer fotoPortadaUrl',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fotoPortadaUrl: '/uploads/productos/no-pertenece.png' }),
+    })
+    verificar(res.status === 400 && typeof body.error === 'string', 'PATCH con foto ajena al producto debería responder 400')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fotoPortadaUrl: null }),
+    })
+    verificar(res.status === 200 && body.fotoPortadaUrl === null, 'PATCH fotoPortadaUrl null debería activar la selección automática')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fotoPortadaUrl: primeraVariante.fotos[0].url }),
+    })
+    verificar(res.status === 200 && body.fotoPortadaUrl === primeraVariante.fotos[0].url, 'PATCH debería permitir restaurar una portada válida')
+  }
+
   // PATCH con archivos reemplaza las fotos anteriores.
   {
     const formulario = new FormData()
@@ -471,6 +515,257 @@ try {
       'GET /productos debería conservar nombre y valor de los atributos',
     )
     verificar(productoListado.variantes[0].fotos.length === 1, 'GET /productos debería incluir las fotos reemplazadas de la variante')
+    verificar(productoListado.fotoPortadaUrl === null, 'reemplazar la foto de portada debería volver a selección automática')
+  }
+
+  // PATCH de variante con galería final: conserva una foto existente y agrega
+  // un archivo nuevo referenciado por índice base 0.
+  const fotoExistente = primeraVariante.fotos[0].url
+  let fotoNueva
+  {
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([
+      { url: fotoExistente, esPrincipal: true },
+      { archivo: 0, esPrincipal: false },
+    ]))
+    formulario.append('fotos', new Blob([contenidoImagenPrueba], { type: 'image/png' }), 'galeria-nueva.png')
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 200, `PATCH galería mixta esperaba 200, recibió ${res.status}`)
+    verificar(body.fotos.length === 2, 'la galería mixta debería devolver dos fotos')
+    verificar(
+      body.fotos[0].url === fotoExistente && body.fotos[0].esPrincipal === true,
+      'la galería mixta debería conservar la foto existente como principal',
+    )
+    verificar(
+      body.fotos[1].url.startsWith('/uploads/productos/') && body.fotos[1].url !== fotoExistente,
+      'la galería mixta debería incluir la URL del archivo nuevo',
+    )
+    verificar(body.fotos[1].esPrincipal === false, 'la foto nueva no debería ser principal sin marcarse')
+    fotoNueva = body.fotos[1].url
+    imagenesVariantesSubidas.push(basename(new URL(fotoNueva, base).pathname))
+    const filas = await pool.query(
+      'SELECT url, es_principal FROM imagenes_variante WHERE id_variante = $1 ORDER BY id_imagen',
+      [primeraVariante.id],
+    )
+    verificar(filas.rows.length === 2, 'la base debería contener exactamente las dos fotos de la galería')
+    verificar(
+      filas.rows[0].url === fotoExistente && filas.rows[0].es_principal === true,
+      'la base debería conservar la foto existente como principal',
+    )
+    verificar(
+      filas.rows[1].url === fotoNueva && filas.rows[1].es_principal === false,
+      'la base debería persistir la foto nueva de la galería',
+    )
+    const imagen = await fetch(base + fotoNueva)
+    verificar(
+      imagen.status === 200 && imagen.headers.get('content-type') === 'image/png',
+      'la foto nueva de la galería debería servirse desde /uploads/productos',
+    )
+    primeraVariante = body
+  }
+
+  // Sin esPrincipal explícito, la primera foto de la galería queda principal;
+  // conservar la foto de portada no la cambia.
+  let fotoReferenciada
+  {
+    const { res: resPortada } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fotoPortadaUrl: fotoExistente }),
+    })
+    verificar(resPortada.status === 200, 'se debería poder marcar una foto de la galería como portada')
+
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([
+      { url: fotoNueva },
+      { url: fotoExistente },
+    ]))
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 200, `PATCH galería sin principal esperaba 200, recibió ${res.status}`)
+    verificar(
+      body.fotos[0].url === fotoNueva && body.fotos[0].esPrincipal === true,
+      'la primera foto de la galería debería quedar como principal por defecto',
+    )
+    verificar(
+      body.fotos[1].url === fotoExistente && body.fotos[1].esPrincipal === false,
+      'la galería no debería tener más de una foto principal',
+    )
+    const filas = await pool.query(
+      'SELECT url, es_principal FROM imagenes_variante WHERE id_variante = $1 ORDER BY id_imagen',
+      [primeraVariante.id],
+    )
+    verificar(filas.rows.length === 2 && filas.rows.filter((fila) => fila.es_principal).length === 1, 'la base debería guardar una sola principal')
+    const { body: producto } = await fetchJson(base, `/productos/${creado.id}`)
+    verificar(producto.fotoPortadaUrl === fotoExistente, 'conservar la foto de portada en la galería no debería cambiarla')
+    primeraVariante = body
+  }
+
+  // La galería puede omitir fotos existentes y descartar archivos no referenciados.
+  {
+    const antes = new Set(await readdir(join(raiz, 'uploads', 'productos')))
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([
+      { url: fotoNueva, esPrincipal: true },
+      { archivo: 0 },
+    ]))
+    formulario.append('fotos', new Blob([contenidoImagenPrueba], { type: 'image/png' }), 'galeria-referenciada.png')
+    formulario.append('fotos', new Blob([contenidoImagenPrueba], { type: 'image/png' }), 'galeria-huerfana.png')
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 200, `PATCH galería con omisión esperaba 200, recibió ${res.status}`)
+    verificar(
+      body.fotos.length === 2 && body.fotos[0].url === fotoNueva && body.fotos[0].esPrincipal === true,
+      'la galería debería conservar la foto incluida y su orden',
+    )
+    fotoReferenciada = body.fotos[1].url
+    imagenesVariantesSubidas.push(basename(new URL(fotoReferenciada, base).pathname))
+
+    const filas = await pool.query(
+      'SELECT url, es_principal FROM imagenes_variante WHERE id_variante = $1 ORDER BY id_imagen',
+      [primeraVariante.id],
+    )
+    verificar(filas.rows.length === 2, 'la base debería contener solo las fotos incluidas en la galería')
+    verificar(
+      !filas.rows.some((fila) => fila.url === fotoExistente),
+      'la foto omitida debería borrarse de imagenes_variante',
+    )
+    verificar(
+      filas.rows[1].url === fotoReferenciada,
+      'la foto referenciada por índice debería persistir en la base',
+    )
+
+    const despues = new Set(await readdir(join(raiz, 'uploads', 'productos')))
+    const nuevas = [...despues].filter((nombre) => !antes.has(nombre))
+    verificar(
+      nuevas.length === 1 && nuevas[0] === basename(new URL(fotoReferenciada, base).pathname),
+      'el archivo no referenciado debería descartarse del disco',
+    )
+
+    const { body: producto } = await fetchJson(base, `/productos/${creado.id}`)
+    verificar(producto.fotoPortadaUrl === null, 'eliminar la foto de portada de la galería debería limpiarla')
+    primeraVariante = body
+  }
+
+  // Errores de la galería: pertenencia, índices, referencias y principal única.
+  {
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([{ url: '/uploads/productos/ajena.png' }]))
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 400 && typeof body.error === 'string', 'una url ajena a la variante debería responder 400')
+  }
+
+  {
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([{ archivo: 1 }]))
+    formulario.append('fotos', new Blob([contenidoImagenPrueba], { type: 'image/png' }), 'indice-fuera.png')
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 400 && typeof body.error === 'string', 'un índice de archivo fuera de rango debería responder 400')
+  }
+
+  {
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([{ archivo: 0 }, { archivo: 0 }]))
+    formulario.append('fotos', new Blob([contenidoImagenPrueba], { type: 'image/png' }), 'indice-repetido.png')
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 400 && typeof body.error === 'string', 'un índice de archivo repetido debería responder 400')
+  }
+
+  {
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([{ url: fotoNueva, archivo: 0 }]))
+    formulario.append('fotos', new Blob([contenidoImagenPrueba], { type: 'image/png' }), 'url-y-archivo.png')
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 400 && typeof body.error === 'string', 'una referencia con url y archivo a la vez debería responder 400')
+  }
+
+  {
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([
+      { url: fotoNueva, esPrincipal: true },
+      { url: fotoReferenciada, esPrincipal: true },
+    ]))
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 400 && typeof body.error === 'string', 'más de una foto principal debería responder 400')
+  }
+
+  {
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([{ url: fotoNueva }, { url: fotoNueva }]))
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 400 && typeof body.error === 'string', 'una url de foto repetida debería responder 400')
+  }
+
+  {
+    const formulario = new FormData()
+    formulario.append('fotos', JSON.stringify([{ url: fotoNueva, esPrincipal: 'si' }]))
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 400 && typeof body.error === 'string', 'esPrincipal no booleano debería responder 400')
+  }
+
+  // fotos: [] elimina todas las fotos y limpia la portada.
+  {
+    const { res: resPortada } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fotoPortadaUrl: fotoNueva }),
+    })
+    verificar(resPortada.status === 200, 'se debería poder marcar la foto principal como portada antes de vaciar la galería')
+    const formulario = new FormData()
+    formulario.append('fotos', '[]')
+    const { res, body } = await fetchJson(
+      base,
+      `/productos/${creado.id}/variantes/${primeraVariante.id}`,
+      { method: 'PATCH', body: formulario },
+    )
+    verificar(res.status === 200, `PATCH fotos: [] esperaba 200, recibió ${res.status}`)
+    verificar(Array.isArray(body.fotos) && body.fotos.length === 0, 'fotos: [] debería devolver la variante sin fotos')
+    const filas = await pool.query(
+      'SELECT url FROM imagenes_variante WHERE id_variante = $1',
+      [primeraVariante.id],
+    )
+    verificar(filas.rows.length === 0, 'fotos: [] debería borrar todas las filas de imagenes_variante')
+    const { body: producto } = await fetchJson(base, `/productos/${creado.id}`)
+    verificar(producto.fotoPortadaUrl === null, 'vaciar la galería debería limpiar la foto de portada')
+    primeraVariante = body
   }
 
   // POST variante por nombre encuentra la imagen cargada localmente
@@ -508,6 +803,15 @@ try {
     )
   }
 
+  {
+    const { res, body } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fotoPortadaUrl: varianteLocal.fotos[0].url }),
+    })
+    verificar(res.status === 200 && body.fotoPortadaUrl === varianteLocal.fotos[0].url, 'la foto de otra variante del producto también puede ser portada')
+  }
+
   // DELETE variante elimina solo la variante indicada para el producto.
   {
     const res = await fetch(
@@ -522,6 +826,7 @@ try {
       !bodyProducto.variantes.some((variante) => variante.id === varianteLocal.id),
       'la variante eliminada no debería aparecer en el producto',
     )
+    verificar(bodyProducto.fotoPortadaUrl === null, 'eliminar la variante que aporta la portada debería limpiarla')
   }
 
   {

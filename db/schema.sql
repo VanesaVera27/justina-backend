@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS producto (
         REFERENCES categoria (id_categoria) ON UPDATE CASCADE ON DELETE SET NULL
 );
 
+ALTER TABLE producto ADD COLUMN IF NOT EXISTS foto_portada_url VARCHAR(500);
+
 CREATE TABLE IF NOT EXISTS especificaciones (
     id_especificacion BIGSERIAL PRIMARY KEY,
     id_producto BIGINT NOT NULL,

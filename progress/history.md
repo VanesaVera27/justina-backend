@@ -63,3 +63,19 @@
 - **Archivos clave:** `db/inserts.sql`, `scripts/smoke.js`.
 - **Acción:** se usa `/uploads/remera.jpg` para la variante de remera negra y se quitan las referencias seed `/images/...` no servidas; smoke compara URL y `es_principal` de la respuesta con la fila PostgreSQL.
 - **Cierre:** `./init.sh` verde contra una base temporal aislada; base temporal eliminada al terminar.
+
+## 2026-11-03 — foto-portada-producto — Exponer foto de portada de producto
+
+- **Objetivo:** permitir una portada de producto seleccionable entre las fotos de sus variantes.
+- **Tareas:** `producto-foto-portada` — `done`.
+- **Archivos clave:** `db/schema.sql`, dominio/repositorio/servicio de productos, `scripts/smoke.js`, `docs/http.md`.
+- **Acción:** persistencia y respuesta de `fotoPortadaUrl`, validación de pertenencia, `null` automático y limpieza transaccional al reemplazar fotos o quitar variantes.
+- **Cierre:** `./init.sh` verde; frontend postergado según pedido.
+
+## 2026-11-06 — galeria-fotos-patch — Galería final de fotos en PATCH de variante
+
+- **Objetivo:** que `PATCH /productos/:productoId/variantes/:varianteId` reciba la galería final con fotos existentes y archivos nuevos.
+- **Tareas:** `variantes-galeria-fotos-patch` — `done`.
+- **Archivos clave:** `src/domain/producto.js`, `src/services/productoService.js`, `src/repositories/productoRepository.js`, `docs/http.md`, `scripts/smoke.js`.
+- **Acción:** `fotos` acepta `{url}` de la variante y `{archivo: índice base 0}` de la request; valida pertenencia/índices/única principal, persiste el orden exacto, borra omitidas, descarta archivos huérfanos y limpia `fotoPortadaUrl`.
+- **Cierre:** reviewer `APPROVED`; `./init.sh` verde.

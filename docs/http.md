@@ -94,6 +94,11 @@ respuestas.
   editar se acepta una categoría existente o `null`; el borrado de una
   categoría exige reasignar esos productos o establecer su `categoriaId` a
   `null` antes de eliminarla.
+- Los productos exponen `fotoPortadaUrl` como una URL de sus fotos de variante
+  o `null` para selección automática. `PATCH /productos/:id` acepta ese campo;
+  una URL no nula debe pertenecer a una foto de una variante del mismo
+  producto. Si la foto deja de existir al reemplazar fotos o quitar su
+  variante, la portada vuelve a `null`.
 - `DELETE /productos/:id` es una baja lógica: marca el producto como
   `inactivo` y responde `204`; no lo elimina de la base. Responde `404` si no
   existe.
@@ -123,8 +128,30 @@ respuestas.
   UUID generados por el servidor. La base guarda solo su URL y el indicador
   `esPrincipal`; la primera imagen enviada queda como principal. Las URLs
   `/uploads/productos/<nombre>` sirven directamente al frontend.
-- En `PATCH`, si no se envían archivos se conservan las fotos actuales; si se
-  envía uno o más archivos, se reemplaza el conjunto de fotos de la variante.
+- `PATCH /productos/:productoId/variantes/:varianteId` acepta un campo `fotos`
+  con la **galería final y ordenada** de la variante, como array JSON en
+  requests JSON o como texto JSON en `multipart/form-data`. Cada elemento
+  incluye exactamente una referencia más `esPrincipal` opcional:
+  - `{ "url": "<url existente>", "esPrincipal": true|false }` conserva una foto
+    que ya pertenece a esa variante.
+  - `{ "archivo": <índice base 0>, "esPrincipal": true|false }` referencia un
+    archivo nuevo subido en la misma request bajo el campo multipart `fotos`.
+    El primer archivo subido es el índice `0`.
+- Validaciones de la galería (todas responden `400` con `{ "error": "..." }`):
+  una `url` que no pertenece a la variante, un `archivo` que no es entero o
+  está fuera de rango, referencias duplicadas (misma `url` o mismo índice),
+  un elemento con `url` y `archivo` a la vez (o ninguno), `esPrincipal` que no
+  sea booleano y más de un `esPrincipal: true`.
+- La galería se persiste exactamente como se envía, en ese orden: se borran las
+  fotos no incluidas y se descartan los archivos subidos que no fueron
+  referenciados. Como máximo una foto queda como principal; si la lista no
+  está vacía y ninguna lo marca, la primera queda principal. `fotos: []` es
+  válido y elimina todas las fotos de la variante. Si la galería final elimina
+  la foto usada como `fotoPortadaUrl`, el producto vuelve a `fotoPortadaUrl:
+  null`; si la conserva, la portada no cambia.
+- Sin el campo `fotos`, el `PATCH` conserva el comportamiento anterior: si no
+  se envían archivos se conservan las fotos actuales; si se envía uno o más
+  archivos, se reemplaza el conjunto por los archivos enviados en orden.
 - La carga anterior por nombre en JSON sigue admitida por compatibilidad para
   crear variantes; los nuevos flujos del panel deben enviar archivos
   multipart. Los campos `stock` y `precioUnitario` se reciben como texto
