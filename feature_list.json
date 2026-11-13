@@ -257,6 +257,20 @@
         "./init.sh termina verde (lint + smoke)"
       ],
       "status": "done"
+    },
+    {
+      "name": "postman-coleccion-completa",
+      "title": "Actualizar la colección Postman con todos los endpoints vigentes",
+      "description": "Reescribir postman/justina-backend.postman_collection.json para cubrir los 13 endpoints actuales de la API, organizados en 4 carpetas: Productos (POST /productos, GET /productos, GET /productos/:id, PATCH /productos/:id, DELETE /productos/:id), Variantes (POST /productos/:id/variantes, PATCH /productos/:productoId/variantes/:varianteId, DELETE /productos/:productoId/variantes/:varianteId), Categorías (GET /categorias, POST /categorias, PATCH /categorias/:id, DELETE /categorias/:id) e Imágenes (POST /imagenes). Mantener la variable baseUrl y agregar idProducto, idVariante e idCategoria. Cada request debe documentar método, URL, status esperado, payload de ejemplo y errores posibles según docs/http.md. Guardar los IDs con scripts de test al crear producto, variante y categoría. Las requests de creación/edición de variantes y la de imágenes usan multipart/form-data (campos sku, stock, precioUnitario, atributos como JSON serializado y archivos bajo fotos; imágenes bajo el campo archivo). No se modifica código de src/ ni el smoke.",
+      "acceptance": [
+        "postman/justina-backend.postman_collection.json es JSON válido con schema v2.1.0 y carga sin errores en Postman/Newman",
+        "Están presentes los 13 endpoints vigentes repartidos en las carpetas Productos, Variantes, Categorías e Imágenes, con el método y la URL correctos",
+        "La colección define las variables baseUrl, idProducto, idVariante e idCategoria y las usa en las URLs correspondientes",
+        "Hay scripts que guardan idProducto, idVariante e idCategoria al crear cada recurso, y cada request documenta status esperado y errores posibles",
+        "Las requests de variantes usan multipart/form-data con el campo fotos (tipo file) y atributos como JSON serializado; POST /imagenes usa multipart/form-data con el campo archivo (tipo file)",
+        "./init.sh termina verde (lint + smoke) y no se modifican archivos de src/"
+      ],
+      "status": "done"
     }
   ]
 }

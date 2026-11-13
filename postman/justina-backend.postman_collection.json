@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "justina-backend",
-    "description": "Colección Postman del backend Justina (catálogo: productos y variantes sobre PostgreSQL). Asegurate de tener la API corriendo con `npm run dev` en http://localhost:3000.",
+    "description": "Colección Postman del backend Justina (catálogo: productos, variantes, categorías e imágenes sobre PostgreSQL). Requiere la API corriendo con `npm run dev` en http://localhost:3000 y la base migrada con `npm run bd:init`. Orden sugerido: Categorías → Crear categoría (guarda `idCategoria`), Productos → Crear producto (guarda `idProducto`), Variantes → Crear variante (guarda `idVariante`), y después las lecturas, ediciones y bajas. Las requests multipart requieren seleccionar archivos de imagen en el campo indicado.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_postman_id": "b7e4c2a1-5f0d-49a1-9f6e-justina0001"
   },
@@ -15,25 +15,44 @@
       "key": "idProducto",
       "value": "1",
       "type": "string"
+    },
+    {
+      "key": "idVariante",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "idCategoria",
+      "value": "1",
+      "type": "string"
     }
   ],
   "item": [
     {
       "name": "Productos",
+      "description": "Alta, listado, detalle, edición parcial y baja lógica de productos. El producto no tiene precio ni fotos propias: el precio es derivado del mínimo de sus variantes y las fotos viven en cada variante.",
       "item": [
         {
           "name": "Crear producto",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "url": "{{baseUrl}}/productos",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nombre\": \"Remera Justina\",\n  \"descripcion\": \"Algodón premium\",\n  \"marca\": \"Justina\"\n}"
+              "raw": "{\n  \"nombre\": \"Remera Justina Oversize\",\n  \"descripcion\": \"Remera de algodón peinado, corte oversize\",\n  \"marca\": \"Justina\",\n  \"categoriaId\": null,\n  \"estado\": \"activo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "description": "Crea un producto. Sin precio ni fotos: todo eso vive en sus variantes. Status esperado: 201."
+            "url": "{{baseUrl}}/productos",
+            "description": "POST /productos — Crea un producto. Campos: nombre (obligatorio), descripcion y marca (string o null), categoriaId (id existente o null; podés usar \"{{idCategoria}}\") y estado (\"activo\" o \"inactivo\", default \"activo\"). Status esperado: 201 con el producto creado (id string, categoriaId string o null, fotoPortadaUrl null, variantes [] y fechas ISO). Errores: 400 si falta el nombre; descripcion o marca no son string ni null; estado no es \"activo\" o \"inactivo\"; categoriaId no es un id positivo, no existe o no es válido; 500 error interno."
           },
           "event": [
             {
@@ -42,9 +61,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('status 201', () => pm.response.to.have.status(201));",
-                  "const cuerpo = pm.response.json();",
-                  "if (cuerpo && cuerpo.id) {",
-                  "  pm.collectionVariables.set('idProducto', String(cuerpo.id));",
+                  "const producto = pm.response.json();",
+                  "if (producto && producto.id) {",
+                  "  pm.collectionVariables.set('idProducto', String(producto.id));",
                   "}"
                 ]
               }
@@ -56,7 +75,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/productos",
-            "description": "Devuelve el catálogo completo como array JSON (incluye inactivos). Esperado: 200."
+            "description": "GET /productos — Lista el catálogo completo como array JSON, incluidos los productos inactivos. Cada producto incluye su array variantes con sku, stock, precioUnitario, atributos y fotos; su precioUnitario propio es null y el derivado surge de sus variantes. Status esperado: 200 con Content-Type application/json; charset=utf-8. Errores: 500 error interno."
           }
         },
         {
@@ -64,7 +83,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/productos/{{idProducto}}",
-            "description": "Detalle del producto con su array variantes (precio, sku, stock, atributos, fotos). El precio del producto es derivado: mínimo de sus variantes, null si no tiene. Esperado: 200; 404 si no existe."
+            "description": "GET /productos/{{idProducto}} — Devuelve el detalle de un producto con su array variantes (vacío si no tiene). Incluye categoriaId, fotoPortadaUrl, estado y fechas ISO. Status esperado: 200. Errores: 404 con { \"error\": \"...\" } si el producto no existe; 500 error interno."
           }
         },
         {
@@ -72,42 +91,253 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
-            "url": "{{baseUrl}}/productos/{{idProducto}}",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"descripcion\": \"Algodón premium, edición 2026\"\n}"
+              "raw": "{\n  \"nombre\": \"Remera Justina Oversize\",\n  \"descripcion\": \"Remera de algodón peinado, corte oversize (edición 2026)\",\n  \"marca\": \"Justina\",\n  \"categoriaId\": \"{{idCategoria}}\",\n  \"estado\": \"activo\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "description": "Edición parcial: cualquier subconjunto de nombre, descripcion, marca, estado (\"activo\"/\"inactivo\"). Esperado: 200; 400 si inválido; 404 si no existe."
+            "url": "{{baseUrl}}/productos/{{idProducto}}",
+            "description": "PATCH /productos/{{idProducto}} — Edición parcial. Acepta cualquier subconjunto de nombre, descripcion, marca, estado (\"activo\"/\"inactivo\"), categoriaId (id existente o null) y fotoPortadaUrl (URL de una foto de una variante del producto, o null para selección automática). Status esperado: 200 con el producto actualizado y actualizadoEn refrescado. Errores: 400 por tipos inválidos, campo no editable, categoriaId inexistente o fotoPortadaUrl que no pertenece al producto; 404 si el producto no existe; 500 error interno."
           }
         },
         {
-          "name": "Dar de baja producto",
+          "name": "Dar de baja producto (baja lógica)",
           "request": {
             "method": "DELETE",
             "url": "{{baseUrl}}/productos/{{idProducto}}",
-            "description": "Baja lógica: no borra nada, marca activo=false (estado \"inactivo\"). Esperado: 204 sin cuerpo; 404 si no existe."
+            "description": "DELETE /productos/{{idProducto}} — Baja lógica: no borra el producto, lo marca como inactivo (activo=false en la base). El producto sigue apareciendo en GET /productos con estado \"inactivo\". Status esperado: 204 sin cuerpo. Errores: 404 con { \"error\": \"...\" } si el producto no existe; 500 error interno."
           }
         }
       ]
     },
     {
       "name": "Variantes",
+      "description": "Alta, edición y baja de variantes de un producto. Las variantes se envían como multipart/form-data: campos de texto sku, stock, precioUnitario y atributos (JSON serializado), y uno o más archivos bajo el campo fotos.",
       "item": [
         {
           "name": "Crear variante",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "sku",
+                  "value": "REM-OV-NEG-M",
+                  "type": "text",
+                  "description": "SKU único de la variante (obligatorio). Si ya existe responde 409."
+                },
+                {
+                  "key": "stock",
+                  "value": "12",
+                  "type": "text",
+                  "description": "Entero mayor o igual a 0 (obligatorio)."
+                },
+                {
+                  "key": "precioUnitario",
+                  "value": "18500",
+                  "type": "text",
+                  "description": "Número mayor a 0 (obligatorio)."
+                },
+                {
+                  "key": "atributos",
+                  "value": "[{\"nombre\":\"talle\",\"valor\":\"M\"},{\"nombre\":\"color\",\"valor\":\"negro\"}]",
+                  "type": "text",
+                  "description": "Array JSON serializado de { nombre, valor }."
+                },
+                {
+                  "key": "fotos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Una o más imágenes PNG, JPEG, GIF, WebP o AVIF (máx. 10 MB cada una y 10 archivos). La primera queda como principal."
+                }
+              ]
+            },
             "url": "{{baseUrl}}/productos/{{idProducto}}/variantes",
+            "description": "POST /productos/{{idProducto}}/variantes — Crea una variante del producto con multipart/form-data. Campos: sku (obligatorio y único), stock (entero >= 0), precioUnitario (número > 0, obligatorio), atributos (array JSON serializado de { nombre, valor }) y uno o más archivos en fotos. Status esperado: 201 con la variante creada (id string, sku, stock, precioUnitario, atributos y fotos con esPrincipal). Errores: 400 por sku/stock/precio/atributos inválidos, JSON de atributos malformado, sin archivos o multipart inválido; 404 si el producto no existe; 409 si el sku ya está en uso; 413 si una imagen supera 10 MB."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const variante = pm.response.json();",
+                  "if (variante && variante.id) {",
+                  "  pm.collectionVariables.set('idVariante', String(variante.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Editar variante (parcial)",
+          "request": {
+            "method": "PATCH",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "sku",
+                  "value": "REM-OV-NEG-M",
+                  "type": "text",
+                  "description": "SKU de la variante; debe seguir siendo único."
+                },
+                {
+                  "key": "stock",
+                  "value": "10",
+                  "type": "text",
+                  "description": "Entero mayor o igual a 0."
+                },
+                {
+                  "key": "precioUnitario",
+                  "value": "17900",
+                  "type": "text",
+                  "description": "Número mayor a 0."
+                },
+                {
+                  "key": "atributos",
+                  "value": "[{\"nombre\":\"talle\",\"valor\":\"M\"},{\"nombre\":\"color\",\"valor\":\"negro\"}]",
+                  "type": "text",
+                  "description": "Array JSON serializado con los atributos finales."
+                },
+                {
+                  "key": "fotos",
+                  "type": "file",
+                  "src": [],
+                  "description": "Opcional. Sin archivos conserva las fotos actuales; con archivos reemplaza el conjunto por los enviados, en orden."
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/productos/{{idProducto}}/variantes/{{idVariante}}",
+            "description": "PATCH /productos/{{idProducto}}/variantes/{{idVariante}} — Edición parcial con multipart/form-data. Enviá solo los campos a cambiar entre sku, stock, precioUnitario, atributos (JSON serializado) y archivos en fotos. Sin archivos conserva las fotos actuales; con archivos reemplaza el conjunto por los enviados en orden. Para definir la galería final y ordenada agregá el campo de texto fotos con un array JSON como [{\"url\":\"<foto existente>\",\"esPrincipal\":true},{\"archivo\":0,\"esPrincipal\":false}] (índice base 0 de los archivos de esta request); fotos: [] elimina todas. Status esperado: 200 con la variante actualizada y sus fotos finales. Errores: 400 por campos/atributos/galería inválidos, url ajena a la variante, índice fuera de rango o repetido, referencia con url y archivo a la vez, esPrincipal no booleano o más de una principal; 404 si el producto o la variante no existen o no pertenecen; 409 si el sku ya existe; 413 si una imagen supera 10 MB."
+          }
+        },
+        {
+          "name": "Eliminar variante",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/productos/{{idProducto}}/variantes/{{idVariante}}",
+            "description": "DELETE /productos/{{idProducto}}/variantes/{{idVariante}} — Elimina la variante indicada y sus datos dependientes (atributos e imágenes). Si la foto eliminada era la portada del producto, la portada vuelve a null. Status esperado: 204 sin cuerpo. Errores: 404 con { \"error\": \"...\" } si el producto no existe o la variante no pertenece al producto; 500 error interno."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categorías",
+      "description": "Listado, alta, edición y borrado de categorías. Una categoría con productos asociados no puede eliminarse: responde 409 hasta reasignar o desasociar esos productos.",
+      "item": [
+        {
+          "name": "Listar categorías",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/categorias",
+            "description": "GET /categorias — Devuelve todas las categorías como array JSON de { id: string, nombre, esDestacada: boolean }. Status esperado: 200 con Content-Type application/json; charset=utf-8. Errores: 500 error interno."
+          }
+        },
+        {
+          "name": "Crear categoría",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sku\": \"REM-M\",\n  \"precioUnitario\": 5500,\n  \"stock\": 10,\n  \"atributos\": [\n    { \"nombre\": \"talla\", \"valor\": \"M\" },\n    { \"nombre\": \"color\", \"valor\": \"celeste\" }\n  ],\n  \"fotos\": [\n    { \"url\": \"https://ejemplo.com/remera-m.jpg\", \"esPrincipal\": true },\n    { \"url\": \"https://ejemplo.com/remera-m-atras.jpg\" }\n  ]\n}"
+              "raw": "{\n  \"nombre\": \"Remeras\",\n  \"esDestacada\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "description": "Crea una variante del producto. precioUnitario y sku son obligatorios (sku único: 409 si duplicado); atributos libres se persisten en valor_atributo/valor_variante; fotos van a imagenes_variante con esPrincipal (por defecto la primera). Esperado: 201."
+            "url": "{{baseUrl}}/categorias",
+            "description": "POST /categorias — Crea una categoría. Campos: nombre (obligatorio, hasta 100 caracteres) y esDestacada (booleano, default false). Status esperado: 201 con la categoría creada ({ id, nombre, esDestacada }). Errores: 400 si falta el nombre, supera 100 caracteres, esDestacada no es booleano o se envía un campo no permitido; 500 error interno."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const categoria = pm.response.json();",
+                  "if (categoria && categoria.id) {",
+                  "  pm.collectionVariables.set('idCategoria', String(categoria.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Editar categoría (parcial)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Remeras y musculosas\",\n  \"esDestacada\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/categorias/{{idCategoria}}",
+            "description": "PATCH /categorias/{{idCategoria}} — Edición parcial de nombre y/o esDestacada (al menos un campo). Status esperado: 200 con la categoría actualizada. Errores: 400 si el cuerpo está vacío, el nombre es inválido, esDestacada no es booleano o se envía un campo no permitido; 404 con { \"error\": \"...\" } si la categoría no existe; 500 error interno."
+          }
+        },
+        {
+          "name": "Eliminar categoría",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/categorias/{{idCategoria}}",
+            "description": "DELETE /categorias/{{idCategoria}} — Borra físicamente la categoría. Status esperado: 204 sin cuerpo. Errores: 404 con { \"error\": \"...\" } si la categoría no existe; 409 con { \"error\": \"...\" } si todavía tiene productos asociados (no se borra ni desasocia nada en cascada); 500 error interno."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Imágenes",
+      "description": "Carga de imágenes sueltas por multipart/form-data. Las imágenes quedan disponibles bajo /uploads y pueden referenciarse por nombre en el flujo legado de fotos de variante.",
+      "item": [
+        {
+          "name": "Subir imagen",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "archivo",
+                  "type": "file",
+                  "src": [],
+                  "description": "Imagen PNG, JPEG, GIF, WebP o AVIF de hasta 10 MB. La extensión debe coincidir con el contenido."
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/imagenes",
+            "description": "POST /imagenes — Recibe multipart/form-data con el campo archivo y guarda la imagen en uploads/ con su nombre original. Status esperado: 201 con { \"nombre\": \"<nombre-original>\", \"url\": \"/uploads/<nombre-original>\" }. Errores: 400 si falta el archivo, el tipo no es una imagen permitida, la extensión no coincide con el contenido, la firma binaria es inválida, el nombre no es válido o el multipart es inválido; 409 con { \"error\": \"...\" } si ya existe una imagen con ese nombre (no se sobrescribe); 413 si supera 10 MB; 500 error interno."
           }
         }
       ]

@@ -79,3 +79,11 @@
 - **Archivos clave:** `src/domain/producto.js`, `src/services/productoService.js`, `src/repositories/productoRepository.js`, `docs/http.md`, `scripts/smoke.js`.
 - **Acción:** `fotos` acepta `{url}` de la variante y `{archivo: índice base 0}` de la request; valida pertenencia/índices/única principal, persiste el orden exacto, borra omitidas, descarta archivos huérfanos y limpia `fotoPortadaUrl`.
 - **Cierre:** reviewer `APPROVED`; `./init.sh` verde.
+
+## 2026-11-12 — postman-coleccion — Actualizar colección Postman
+
+- **Objetivo:** reflejar en Postman todos los endpoints vigentes de la API.
+- **Tareas:** `postman-coleccion-completa` — `done`.
+- **Archivos clave:** `postman/justina-backend.postman_collection.json`.
+- **Acción:** reescritura con 4 carpetas (Productos, Variantes, Categorías, Imágenes), 13 requests, variables `baseUrl`/`idProducto`/`idVariante`/`idCategoria`, scripts que guardan IDs y multipart para variantes e imágenes.
+- **Cierre:** reviewer `APPROVED`; `./init.sh` verde sin cambios en `src/`.
