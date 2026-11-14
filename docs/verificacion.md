@@ -29,6 +29,9 @@ El script:
    `[OK] smoke: plantilla sin endpoints, nada que verificar`.
 2. Cada tarea que agrega o cambia un endpoint lo extiende (véase la
    estructura sugerida dentro del propio script).
+3. En una aplicación con endpoints, opera sobre la base configurada: conserva
+   los datos previos y elimina únicamente los registros de prueba que crea.
+   No debe ejecutarse contra producción.
 
 **Cada tarea que agrega o cambia un endpoint debe extender
 `scripts/smoke.js`** con la comprobación del caso nuevo (status,

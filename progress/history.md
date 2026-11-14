@@ -87,3 +87,20 @@
 - **Archivos clave:** `postman/justina-backend.postman_collection.json`.
 - **Acción:** reescritura con 4 carpetas (Productos, Variantes, Categorías, Imágenes), 13 requests, variables `baseUrl`/`idProducto`/`idVariante`/`idCategoria`, scripts que guardan IDs y multipart para variantes e imágenes.
 - **Cierre:** reviewer `APPROVED`; `./init.sh` verde sin cambios en `src/`.
+
+## 2026-11-13 — inserts-ropa-imagenes-locales — Inserts con imágenes locales
+
+- **Objetivo:** que los datos de prueba de ropa usen fotos propias en `uploads/productos` en vez de URLs externas.
+- **Tareas:** `inserts-ropa-imagenes-locales` — `done`.
+- **Archivos clave:** `db/inserts-ropa-prueba.sql`.
+- **Acción:** se creó el catálogo idempotente de ropa (14 productos, 48 variantes, 96 imágenes, 42 especificaciones) y se reemplazaron las 96 URLs de picsum por `/uploads/productos/<seed>.jpg`; las 14 portadas apuntan a la primera foto principal de una variante del mismo producto.
+- **Cierre:** reviewer `APPROVED`; doble ejecución sobre `db/schema.sql` sin duplicados; `./init.sh` verde.
+
+## 2026-11-13 — variantes-huerfanas — Reparar vínculo de variantes
+
+- **Objetivo:** identificar por qué la API no devolvía las variantes insertadas y corregir la integridad de las relaciones.
+- **Tareas:** `reparar-relacion-variantes-producto` — `done`.
+- **Archivos clave:** `db/schema.sql`, `db/inserts-ropa-prueba.sql`, `scripts/smoke.js`, `docs/verificacion.md`.
+- **Acción:** se detectó que `variante` no tenía FK y que el smoke borraba productos globalmente; se agregaron migraciones condicionales, el smoke ahora aísla/limpia solo sus filas y el seed re-enlaza variantes de muestra huérfanas.
+- **Datos:** restaurados 14 productos de muestra y enlazadas 48 variantes; quedan 2 variantes `MATE-IMP-*` sin producto, preservadas. Los productos originales borrados por el smoke requieren respaldo para recuperarse.
+- **Cierre:** el repositorio expone 48 variantes de ropa; `./init.sh`, lint, smoke y reejecución del seed pasan.

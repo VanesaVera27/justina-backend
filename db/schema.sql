@@ -1,15 +1,10 @@
 -- =============================================================================
 -- SCRIPT DDL: BASE DE DATOS E-COMMERCE (POSTGRESQL)
 -- Fuente de verdad: DDL oficial del humano (adaptado: CREATE TABLE IF NOT EXISTS
--- para que bd:init sea idempotente). Sin cambios semanticos.
--- Idempotencia: CREATE TABLE IF NOT EXISTS y ALTER/PDROP con IF EXISTS.
--- Limpieza de transicion: se descartan las tablas minimas anteriores
--- (productos y variantes en plural) para dejar la base limpia; el resto del
--- script no destruye datos.
+-- para que bd:init sea idempotente y migre esquemas existentes.
+-- Idempotencia: CREATE TABLE IF NOT EXISTS, ALTER con IF EXISTS y migraciones
+-- condicionales. El esquema no borra tablas ni datos existentes.
 -- =============================================================================
-
-DROP TABLE IF EXISTS variantes;
-DROP TABLE IF EXISTS productos;
 
 -- 1. TABLAS BASE / CATALOGOS SIN DEPENDENCIAS PREVIAS
 -- -----------------------------------------------------------------------------
@@ -123,6 +118,61 @@ CREATE TABLE IF NOT EXISTS producto (
         REFERENCES categoria (id_categoria) ON UPDATE CASCADE ON DELETE SET NULL
 );
 
+DO $$
+DECLARE
+    restriccion RECORD;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        WHERE c.conrelid = 'producto'::regclass
+          AND c.confrelid = 'categoria'::regclass
+          AND c.contype = 'f'
+          AND c.confdeltype = 'n'
+          AND c.confupdtype = 'c'
+          AND c.conkey = ARRAY[(
+              SELECT a.attnum
+              FROM pg_attribute a
+              WHERE a.attrelid = 'producto'::regclass
+                AND a.attname = 'id_categoria'
+                AND NOT a.attisdropped
+          )]::smallint[]
+          AND c.confkey = ARRAY[(
+              SELECT a.attnum
+              FROM pg_attribute a
+              WHERE a.attrelid = 'categoria'::regclass
+                AND a.attname = 'id_categoria'
+                AND NOT a.attisdropped
+          )]::smallint[]
+    ) THEN
+        FOR restriccion IN
+            SELECT c.conname
+            FROM pg_constraint c
+            WHERE c.conrelid = 'producto'::regclass
+              AND c.confrelid = 'categoria'::regclass
+              AND c.contype = 'f'
+              AND c.conkey = ARRAY[(
+                  SELECT a.attnum
+                  FROM pg_attribute a
+                  WHERE a.attrelid = 'producto'::regclass
+                    AND a.attname = 'id_categoria'
+                    AND NOT a.attisdropped
+              )]::smallint[]
+        LOOP
+            EXECUTE format('ALTER TABLE producto DROP CONSTRAINT %I', restriccion.conname);
+        END LOOP;
+
+        ALTER TABLE producto
+            ADD CONSTRAINT fk_producto_categoria
+            FOREIGN KEY (id_categoria)
+            REFERENCES categoria (id_categoria)
+            ON UPDATE CASCADE
+            ON DELETE SET NULL
+            NOT VALID;
+    END IF;
+END
+$$;
+
 ALTER TABLE producto ADD COLUMN IF NOT EXISTS foto_portada_url VARCHAR(500);
 
 CREATE TABLE IF NOT EXISTS especificaciones (
@@ -155,6 +205,59 @@ CREATE TABLE IF NOT EXISTS variante (
     CONSTRAINT fk_variante_producto FOREIGN KEY (id_producto)
         REFERENCES producto (id_producto) ON DELETE CASCADE
 );
+
+DO $$
+DECLARE
+    restriccion RECORD;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        WHERE c.conrelid = 'variante'::regclass
+          AND c.confrelid = 'producto'::regclass
+          AND c.contype = 'f'
+          AND c.confdeltype = 'c'
+          AND c.conkey = ARRAY[(
+              SELECT a.attnum
+              FROM pg_attribute a
+              WHERE a.attrelid = 'variante'::regclass
+                AND a.attname = 'id_producto'
+                AND NOT a.attisdropped
+          )]::smallint[]
+          AND c.confkey = ARRAY[(
+              SELECT a.attnum
+              FROM pg_attribute a
+              WHERE a.attrelid = 'producto'::regclass
+                AND a.attname = 'id_producto'
+                AND NOT a.attisdropped
+          )]::smallint[]
+    ) THEN
+        FOR restriccion IN
+            SELECT c.conname
+            FROM pg_constraint c
+            WHERE c.conrelid = 'variante'::regclass
+              AND c.confrelid = 'producto'::regclass
+              AND c.contype = 'f'
+              AND c.conkey = ARRAY[(
+                  SELECT a.attnum
+                  FROM pg_attribute a
+                  WHERE a.attrelid = 'variante'::regclass
+                    AND a.attname = 'id_producto'
+                    AND NOT a.attisdropped
+              )]::smallint[]
+        LOOP
+            EXECUTE format('ALTER TABLE variante DROP CONSTRAINT %I', restriccion.conname);
+        END LOOP;
+
+        ALTER TABLE variante
+            ADD CONSTRAINT fk_variante_producto
+            FOREIGN KEY (id_producto)
+            REFERENCES producto (id_producto)
+            ON DELETE CASCADE
+            NOT VALID;
+    END IF;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS imagenes_variante (
     id_imagen BIGSERIAL PRIMARY KEY,

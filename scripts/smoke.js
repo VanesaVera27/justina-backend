@@ -1,7 +1,7 @@
 // Smoke ejecutable: levanta la app en un puerto efímero y comprueba cada
 // endpoint (status, Content-Type, body y casos de error). Node nativo only.
-// Corre contra la BD real (contrato del DDL oficial): garantiza el esquema y
-// limpia producto CASCADE al arrancar.
+// Corre contra la BD configurada, conserva los datos previos y limpia solo
+// los recursos que crea.
 import { once } from 'node:events'
 import { readFile, readdir, unlink } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
@@ -12,16 +12,23 @@ import { pool } from '../src/repositories/pool.js'
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), '..')
 let imagenSubida
+let categoriaPruebaId
+let productoPruebaId
+let otroProductoPruebaId
 const imagenesVariantesSubidas = []
+const sufijoPrueba = `${Date.now()}-${process.pid}`
+const nombreProductoPrueba = `Mate imperial smoke-${sufijoPrueba}`
+const nombreOtroProductoPrueba = `Otro producto smoke-${sufijoPrueba}`
+const nombreImagenPrueba = `smoke-${sufijoPrueba}.png`
+const skuPrimeraVariante = `SMOKE-${sufijoPrueba}-01`
+const skuSegundaVariante = `SMOKE-${sufijoPrueba}-02`
+const skuVarianteLocal = `SMOKE-${sufijoPrueba}-03`
 const contenidoImagenPrueba = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=',
   'base64',
 )
 
-// Determinismo: esquema idempotente + limpieza de producto (ON DELETE CASCADE
-// derrama sobre variante, valor_variante e imagenes_variante).
 await pool.query(await readFile(join(raiz, 'db', 'schema.sql'), 'utf8'))
-await pool.query('DELETE FROM producto')
 
 const servidor = crearApp().listen(0)
 
@@ -53,11 +60,11 @@ try {
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=',
       'base64',
     )
-    formulario.append('archivo', new Blob([contenido], { type: 'image/png' }), 'prueba.png')
+    formulario.append('archivo', new Blob([contenido], { type: 'image/png' }), nombreImagenPrueba)
     const { res, body } = await fetchJson(base, '/imagenes', { method: 'POST', body: formulario })
     verificar(res.status === 201, `POST /imagenes esperaba 201, recibió ${res.status}`)
     verificar(typeof body.url === 'string' && body.url.startsWith('/uploads/'), 'POST /imagenes debería devolver la URL pública')
-    verificar(body.nombre === 'prueba.png', 'POST /imagenes debería conservar y devolver el nombre original')
+    verificar(body.nombre === nombreImagenPrueba, 'POST /imagenes debería conservar y devolver el nombre original')
     imagenSubida = body.url
 
     const imagenPublicada = await fetch(base + body.url)
@@ -71,7 +78,7 @@ try {
     formulario.append(
       'archivo',
       new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=', 'base64')], { type: 'image/png' }),
-      'prueba.png',
+      nombreImagenPrueba,
     )
     const { res, body } = await fetchJson(base, '/imagenes', { method: 'POST', body: formulario })
     verificar(res.status === 409 && typeof body.error === 'string', 'POST /imagenes con nombre duplicado debería responder 409')
@@ -135,6 +142,7 @@ try {
     verificar(typeof body.id === 'string' && body.id.length > 0, 'la categoría debería tener id string')
     verificar(body.nombre === nombreCategoria && body.esDestacada === true, 'POST /categorias debería devolver los campos enviados')
     categoriaCreada = body
+    categoriaPruebaId = body.id
   }
 
   {
@@ -193,7 +201,7 @@ try {
     verificar(res.status === 404 && typeof body.error === 'string', 'PATCH /categorias inexistente debería responder 404')
   }
 
-  // GET colección vacía
+  // GET colección conserva y expone los datos previos.
   {
     const { res, body } = await fetchJson(base, '/productos')
     verificar(res.status === 200, `GET /productos esperaba 200, recibió ${res.status}`)
@@ -201,7 +209,7 @@ try {
       res.headers.get('content-type') === 'application/json; charset=utf-8',
       `GET /productos content-type incorrecto: ${res.headers.get('content-type')}`,
     )
-    verificar(Array.isArray(body) && body.length === 0, 'GET /productos debería devolver array vacío')
+    verificar(Array.isArray(body), 'GET /productos debería devolver un array')
   }
 
   // POST producto 201: sin precioUnitario ni fotos (precio derivado null)
@@ -211,7 +219,7 @@ try {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        nombre: 'Mate imperial',
+        nombre: nombreProductoPrueba,
         descripcion: 'Mate de calabaza',
         marca: 'Justina',
         categoriaId: categoriaCreada.id,
@@ -219,7 +227,7 @@ try {
     })
     verificar(res.status === 201, `POST /productos esperaba 201, recibió ${res.status}`)
     verificar(typeof body.id === 'string' && body.id.length > 0, 'POST /productos debería devolver id string')
-    verificar(body.nombre === 'Mate imperial' && body.marca === 'Justina', 'POST /productos debería devolver nombre y marca')
+    verificar(body.nombre === nombreProductoPrueba && body.marca === 'Justina', 'POST /productos debería devolver nombre y marca')
     verificar(body.precioUnitario === null, 'el producto sin variantes debería exponer precioUnitario null')
     verificar(body.categoriaId === categoriaCreada.id, 'POST /productos debería devolver categoriaId')
     verificar(body.fotoPortadaUrl === null, 'el producto nuevo debería exponer fotoPortadaUrl null')
@@ -228,6 +236,7 @@ try {
     verificar(body.actualizadoEn === body.creadoEn, 'actualizadoEn debería coincidir con creadoEn al crear')
     verificar(Array.isArray(body.variantes) && body.variantes.length === 0, 'el producto debería exponer array variantes vacío')
     creado = body
+    productoPruebaId = body.id
   }
 
   // POST producto con defaults
@@ -236,19 +245,25 @@ try {
     const { res, body } = await fetchJson(base, '/productos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre: 'Otro producto' }),
+      body: JSON.stringify({ nombre: nombreOtroProductoPrueba }),
     })
     verificar(res.status === 201, `POST /productos con defaults esperaba 201, recibió ${res.status}`)
     verificar(body.marca === null, 'marca debería default a null')
     verificar(body.categoriaId === null, 'categoriaId debería default a null')
     otroProducto = body
+    otroProductoPruebaId = body.id
   }
 
   // GET colección con datos (incluye el segundo)
   {
     const { res, body } = await fetchJson(base, '/productos')
     verificar(res.status === 200, `GET /productos esperaba 200, recibió ${res.status}`)
-    verificar(Array.isArray(body) && body.length === 2, `GET /productos debería tener 2 productos, tiene ${body.length}`)
+    verificar(
+      Array.isArray(body) &&
+        body.some((producto) => producto.id === creado.id) &&
+        body.some((producto) => producto.id === otroProducto.id),
+      'GET /productos debería incluir ambos productos creados',
+    )
     verificar(body.find((producto) => producto.id === creado.id)?.categoriaId === categoriaCreada.id, 'GET /productos debería incluir categoriaId')
   }
 
@@ -256,7 +271,7 @@ try {
   {
     const { res, body } = await fetchJson(base, `/productos/${creado.id}`)
     verificar(res.status === 200, `GET /productos/:id esperaba 200, recibió ${res.status}`)
-    verificar(body.id === creado.id && body.nombre === 'Mate imperial', 'GET /productos/:id debería devolver el producto creado')
+    verificar(body.id === creado.id && body.nombre === nombreProductoPrueba, 'GET /productos/:id debería devolver el producto creado')
     verificar(body.categoriaId === categoriaCreada.id, 'GET /productos/:id debería incluir categoriaId')
     verificar(body.fotoPortadaUrl === null, 'GET /productos/:id debería incluir fotoPortadaUrl null')
     verificar(Array.isArray(body.variantes) && body.variantes.length === 0, 'GET /productos/:id debería incluir variantes como array vacío por defecto')
@@ -295,7 +310,7 @@ try {
   let primeraVariante
   {
     const formulario = new FormData()
-    formulario.append('sku', 'MATE-IMP-001')
+    formulario.append('sku', skuPrimeraVariante)
     formulario.append('stock', '5')
     formulario.append('precioUnitario', '15000.5')
     formulario.append('atributos', JSON.stringify([
@@ -314,7 +329,7 @@ try {
       `POST variantes content-type incorrecto: ${res.headers.get('content-type')}`,
     )
     verificar(typeof body.id === 'string' && body.id.length > 0, 'la variante debería tener id string')
-    verificar(body.sku === 'MATE-IMP-001' && body.stock === 5 && body.precioUnitario === 15000.5, 'la variante debería devolver sku, stock y precioUnitario')
+    verificar(body.sku === skuPrimeraVariante && body.stock === 5 && body.precioUnitario === 15000.5, 'la variante debería devolver sku, stock y precioUnitario')
     verificar(Array.isArray(body.atributos) && body.atributos.length === 2, 'la variante debería devolver sus atributos')
     verificar(
       body.atributos.some((atributo) => atributo.nombre === 'color' && atributo.valor === 'verde'),
@@ -418,7 +433,7 @@ try {
   // PATCH con archivos reemplaza las fotos anteriores.
   {
     const formulario = new FormData()
-    formulario.append('sku', 'MATE-IMP-001')
+    formulario.append('sku', skuPrimeraVariante)
     formulario.append('fotos', new Blob([contenidoImagenPrueba], { type: 'image/png' }), 'reemplazo.png')
     const { res, body } = await fetchJson(
       base,
@@ -775,10 +790,10 @@ try {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sku: 'MATE-IMP-LOCAL',
+        sku: skuVarianteLocal,
         stock: 1,
         precioUnitario: 13000,
-        fotos: [{ nombre: 'prueba.png', esPrincipal: true }],
+        fotos: [{ nombre: nombreImagenPrueba, esPrincipal: true }],
       }),
     })
     verificar(res.status === 201, `POST variante con nombre de imagen local esperaba 201, recibió ${res.status}`)
@@ -858,7 +873,7 @@ try {
     const { res, body } = await fetchJson(base, `/productos/${creado.id}/variantes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sku: 'MATE-IMP-002', stock: 2, precioUnitario: 12000, atributos: [] }),
+      body: JSON.stringify({ sku: skuSegundaVariante, stock: 2, precioUnitario: 12000, atributos: [] }),
     })
     verificar(res.status === 201, `POST variante con precio menor esperaba 201, recibió ${res.status}`)
     verificar(body.id !== primeraVariante.id, 'cada variante debería tener un id distinto')
@@ -931,7 +946,7 @@ try {
     const { res, body } = await fetchJson(base, `/productos/${creado.id}/variantes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sku: 'MATE-IMP-001', stock: 1, precioUnitario: 10 }),
+      body: JSON.stringify({ sku: skuPrimeraVariante, stock: 1, precioUnitario: 10 }),
     })
     verificar(res.status === 409, `POST variante con sku duplicado esperaba 409, recibió ${res.status}`)
     verificar(typeof body.error === 'string' && body.error.length > 0, 'sku duplicado debería devolver { "error": "..." }')
@@ -955,14 +970,14 @@ try {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        nombre: 'Mate imperial grande',
+        nombre: `${nombreProductoPrueba} grande`,
         marca: 'Justina Sur',
         estado: 'inactivo',
         categoriaId: categoriaCreada.id,
       }),
     })
     verificar(res.status === 200, `PATCH /productos/:id esperaba 200, recibió ${res.status}`)
-    verificar(body.nombre === 'Mate imperial grande' && body.marca === 'Justina Sur' && body.estado === 'inactivo', 'PATCH debería aplicar los cambios')
+    verificar(body.nombre === `${nombreProductoPrueba} grande` && body.marca === 'Justina Sur' && body.estado === 'inactivo', 'PATCH debería aplicar los cambios')
     verificar(body.descripcion === 'Mate de calabaza', 'PATCH no debería tocar campos no enviados')
     verificar(body.categoriaId === categoriaCreada.id, 'PATCH debería devolver categoriaId')
     verificar(body.precioUnitario === 12000, 'PATCH no debería descartar el precio derivado')
@@ -1118,5 +1133,12 @@ try {
   }
   await Promise.all(imagenesVariantesSubidas.map((nombre) => unlink(join(raiz, 'uploads', 'productos', nombre))))
   await new Promise((resolve) => servidor.close(resolve))
+  const productosPrueba = [productoPruebaId, otroProductoPruebaId].filter(Boolean)
+  if (productosPrueba.length > 0) {
+    await pool.query('DELETE FROM producto WHERE id_producto = ANY($1::bigint[])', [productosPrueba])
+  }
+  if (categoriaPruebaId) {
+    await pool.query('DELETE FROM categoria WHERE id_categoria = $1', [categoriaPruebaId])
+  }
   await pool.end()
 }

@@ -271,6 +271,34 @@
         "./init.sh termina verde (lint + smoke) y no se modifican archivos de src/"
       ],
       "status": "done"
+    },
+    {
+      "name": "inserts-ropa-imagenes-locales",
+      "title": "Usar imágenes locales de uploads/productos en los inserts de ropa",
+      "description": "En db/inserts-ropa-prueba.sql, reemplazar todas las URLs externas de picsum.photos por rutas locales servidas por el backend bajo /uploads/productos/<nombre>.jpg. Para cada fila de imagenes_variante usar como nombre el identificador que hoy figura en el seed de picsum (por ejemplo ropa-rem-ovr-neg-m-1.jpg) y mantener es_principal. Para cada producto, setear foto_portada_url a la ruta local de la primera foto principal de su primera variante. Actualizar el comentario de cabecera para explicar que las imágenes deben copiarse en uploads/productos con esos nombres (o ajustarse las rutas) y que la carpeta es local. Mantener la idempotencia del script.",
+      "acceptance": [
+        "db/inserts-ropa-prueba.sql no contiene ninguna referencia a picsum.photos ni a URLs http/https",
+        "Las 96 filas de imagenes_variante usan rutas /uploads/productos/<nombre>.jpg derivadas del seed actual y conservan es_principal",
+        "Las 14 foto_portada_url usan rutas /uploads/productos/... y coinciden con la primera foto principal de una variante del mismo producto",
+        "El comentario de cabecera documenta la convención de nombres y que las imágenes se colocan en uploads/productos",
+        "Ejecutar el script dos veces sobre db/schema.sql en una base descartable no produce errores ni duplica filas",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "reparar-relacion-variantes-producto",
+      "title": "Reparar el vínculo de variantes con productos",
+      "description": "Corregir el esquema existente para garantizar la FK variante.id_producto -> producto.id_producto con borrado en cascada, sin perder datos heredados; hacer que el smoke no borre productos ajenos ni choque con SKUs existentes; y permitir que el seed de ropa re-enlace solo variantes huérfanas reconocibles por SKU.",
+      "acceptance": [
+        "db/schema.sql aplica de forma idempotente la FK de variante a producto en bases existentes y no elimina tablas de catálogo por nombre plural",
+        "scripts/smoke.js no ejecuta DELETE global de productos, usa nombres/SKUs aislados y limpia solo recursos propios",
+        "db/inserts-ropa-prueba.sql re-enlaza variantes de muestra huérfanas sin alterar variantes con un producto válido",
+        "Las variantes huérfanas no mapeables quedan preservadas y se reportan, no se reasignan arbitrariamente",
+        "La base muestra las variantes de ropa bajo sus productos al leerlas con el repositorio",
+        "npm run lint y ./init.sh terminan correctamente"
+      ],
+      "status": "done"
     }
   ]
 }
