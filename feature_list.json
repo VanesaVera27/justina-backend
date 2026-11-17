@@ -299,6 +299,20 @@
         "npm run lint y ./init.sh terminan correctamente"
       ],
       "status": "done"
+    },
+    {
+      "name": "configuracion-banners",
+      "title": "Implementar configuración de tienda y gestión de banners",
+      "description": "Implementar endpoints PostgreSQL GET/PUT /configuracion y GET/POST/PATCH/DELETE /banners. La configuración única de tienda se asocia al usuario con rol Administrador y expone nombre, contacto, textoPreheader, paletaSitio y paletaPanel; las paletas son objetos JSON. Los banners usan el contrato id, titulo, subtitulo, descripcion, urlImagen, linkReferencia, estaActivo y fecha. Verificar y documentar POST /imagenes con multipart campo archivo, url de respuesta y acceso estático en navegador.",
+      "acceptance": [
+        "GET /configuracion devuelve los cinco campos en JSON y lee su valor desde configuracion_web; PUT valida, persiste y devuelve la configuración actualizada",
+        "GET /banners devuelve un array con ids string, campos camelCase, booleano real y fecha ISO UTC",
+        "POST /banners responde 201; PATCH /banners/:id actualiza parcialmente; DELETE responde 204; ids inexistentes responden 404",
+        "Rutas y capas siguen los patrones existentes y validan datos antes de persistir",
+        "scripts/smoke.js verifica configuración, CRUD de banners y la accesibilidad de la URL devuelta por POST /imagenes, restaurando los datos previos",
+        "docs/http.md describe el contrato nuevo y ./init.sh termina verde"
+      ],
+      "status": "done"
     }
   ]
 }

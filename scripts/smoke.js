@@ -15,7 +15,11 @@ let imagenSubida
 let categoriaPruebaId
 let productoPruebaId
 let otroProductoPruebaId
+let configuracionAdminId
+let configuracionOriginal = []
 const imagenesVariantesSubidas = []
+const bannersPruebaIds = []
+let bannerPruebaCreado = false
 const sufijoPrueba = `${Date.now()}-${process.pid}`
 const nombreProductoPrueba = `Mate imperial smoke-${sufijoPrueba}`
 const nombreOtroProductoPrueba = `Otro producto smoke-${sufijoPrueba}`
@@ -48,10 +52,78 @@ function verificar(condicion, mensaje) {
   if (!condicion) throw new Error(mensaje)
 }
 
+async function restaurarConfiguracionPrueba() {
+  const cliente = await pool.connect()
+  try {
+    await cliente.query('BEGIN')
+    if (bannersPruebaIds.length > 0) {
+      await cliente.query(
+        'DELETE FROM banners WHERE id_banner = ANY($1::integer[])',
+        [bannersPruebaIds],
+      )
+    }
+    if (configuracionAdminId) {
+      for (const fila of configuracionOriginal) {
+        await cliente.query(
+          `UPDATE configuracion_web
+           SET valor = $2, fecha_modificacion = $3
+           WHERE id_configuracion = $1`,
+          [fila.id_configuracion, fila.valor, fila.fecha_modificacion],
+        )
+      }
+      const idsOriginales = configuracionOriginal.map((fila) => fila.id_configuracion)
+      const temporales = await cliente.query(
+        `SELECT id_configuracion
+         FROM configuracion_web cw
+         WHERE cw.id_usuario = $1
+           AND cw.clave = ANY($2::text[])
+           AND cw.id_configuracion <> ALL($3::integer[])
+           AND NOT EXISTS (
+             SELECT 1 FROM banners b WHERE b.id_configuracion = cw.id_configuracion
+           )`,
+        [configuracionAdminId, ['nombre_tienda', 'whatsapp', 'email_contacto', 'instagram', 'tiktok', 'ubicacion', 'texto_preheader', 'paleta_sitio', 'paleta_panel'], idsOriginales],
+      )
+      if (temporales.rowCount > 0) {
+        await cliente.query(
+          'DELETE FROM configuracion_web WHERE id_configuracion = ANY($1::integer[])',
+          [temporales.rows.map((fila) => fila.id_configuracion)],
+        )
+      }
+    }
+    await cliente.query('COMMIT')
+  } catch (error) {
+    await cliente.query('ROLLBACK')
+    throw error
+  } finally {
+    cliente.release()
+  }
+}
+
 try {
   await once(servidor, 'listening')
   const { port } = servidor.address()
   const base = `http://127.0.0.1:${port}`
+  {
+    const administrador = await pool.query(
+      `SELECT u.id_usuario
+       FROM usuario u
+       JOIN roles r ON r.id_roles = u.id_rol
+       WHERE r.nombre = 'Administrador'
+       ORDER BY u.id_usuario
+       LIMIT 1`,
+    )
+    verificar(administrador.rowCount === 1, 'el smoke requiere un usuario Administrador para probar la configuración')
+    configuracionAdminId = administrador.rows[0].id_usuario
+    const filas = await pool.query(
+      `SELECT id_configuracion, clave, valor, fecha_modificacion
+       FROM configuracion_web
+       WHERE id_usuario = $1
+         AND clave = ANY($2::text[])
+       ORDER BY id_configuracion`,
+      [configuracionAdminId, ['nombre_tienda', 'whatsapp', 'email_contacto', 'instagram', 'tiktok', 'ubicacion', 'texto_preheader', 'paleta_sitio', 'paleta_panel']],
+    )
+    configuracionOriginal = filas.rows
+  }
 
   // POST /imagenes guarda y publica el archivo recibido
   {
@@ -62,15 +134,189 @@ try {
     )
     formulario.append('archivo', new Blob([contenido], { type: 'image/png' }), nombreImagenPrueba)
     const { res, body } = await fetchJson(base, '/imagenes', { method: 'POST', body: formulario })
+    if (res.status === 201) {
+      imagenSubida = typeof body.url === 'string'
+        ? body.url
+        : `/uploads/${encodeURIComponent(nombreImagenPrueba)}`
+    }
     verificar(res.status === 201, `POST /imagenes esperaba 201, recibió ${res.status}`)
     verificar(typeof body.url === 'string' && body.url.startsWith('/uploads/'), 'POST /imagenes debería devolver la URL pública')
     verificar(body.nombre === nombreImagenPrueba, 'POST /imagenes debería conservar y devolver el nombre original')
-    imagenSubida = body.url
 
     const imagenPublicada = await fetch(base + body.url)
     verificar(imagenPublicada.status === 200, 'la URL devuelta debería servir la imagen')
     verificar(imagenPublicada.headers.get('content-type') === 'image/png', 'la URL debería conservar el tipo de imagen')
     verificar(Buffer.compare(Buffer.from(await imagenPublicada.arrayBuffer()), contenido) === 0, 'la imagen publicada debería conservar el contenido')
+  }
+
+  // GET/PUT configuración de la tienda.
+  {
+    const { res, body } = await fetchJson(base, '/configuracion')
+    verificar(res.status === 200, `GET /configuracion esperaba 200, recibió ${res.status}`)
+    verificar(
+      ['nombre', 'whatsapp', 'emailContacto', 'instagram', 'tiktok', 'ubicacion', 'textoPreheader', 'paletaSitio', 'paletaPanel'].every((campo) => Object.hasOwn(body, campo)),
+      'GET /configuracion debería devolver todos los campos del contrato',
+    )
+  }
+
+  const configuracionPrueba = {
+    nombre: `Tienda smoke ${sufijoPrueba}`,
+    whatsapp: '+54 9 11 2525-0523',
+    emailContacto: 'smoke@example.com',
+    instagram: '@smoke',
+    tiktok: '@smoke',
+    ubicacion: 'Ciudad smoke',
+    textoPreheader: `Oferta smoke ${sufijoPrueba}`,
+    paletaSitio: { principal: '#123456', texto: '#ffffff' },
+    paletaPanel: { principal: '#654321', fondo: '#f0f0f0' },
+  }
+  {
+    const { res, body } = await fetchJson(base, '/configuracion', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(configuracionPrueba),
+    })
+    verificar(res.status === 200, `PUT /configuracion esperaba 200, recibió ${res.status}`)
+    verificar(
+      JSON.stringify(body) === JSON.stringify(configuracionPrueba),
+      'PUT /configuracion debería devolver los valores persistidos',
+    )
+    const { res: resGet, body: bodyGet } = await fetchJson(base, '/configuracion')
+    verificar(
+      resGet.status === 200 && JSON.stringify(bodyGet) === JSON.stringify(configuracionPrueba),
+      'GET /configuracion debería leer los cambios guardados',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/configuracion', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...configuracionPrueba, paletaSitio: [] }),
+    })
+    verificar(res.status === 400 && typeof body.error === 'string', 'PUT /configuracion debería rechazar paletas que no sean objetos')
+  }
+
+  {
+    const configuracionVacia = {
+      ...configuracionPrueba,
+      whatsapp: null,
+      emailContacto: null,
+      instagram: null,
+      tiktok: null,
+      ubicacion: null,
+      textoPreheader: null,
+      paletaSitio: null,
+      paletaPanel: null,
+    }
+    const { res, body } = await fetchJson(base, '/configuracion', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(configuracionVacia),
+    })
+    verificar(
+      res.status === 200 &&
+        body.whatsapp === null &&
+        body.emailContacto === null &&
+        body.instagram === null &&
+        body.tiktok === null &&
+        body.ubicacion === null &&
+        body.textoPreheader === null &&
+        body.paletaSitio === null &&
+        body.paletaPanel === null,
+      'PUT /configuracion debería permitir limpiar campos opcionales',
+    )
+  }
+
+  // CRUD de banners.
+  {
+    const { res, body } = await fetchJson(base, '/banners')
+    verificar(res.status === 200 && Array.isArray(body), 'GET /banners debería devolver un array')
+  }
+
+  const bannerPrueba = {
+    titulo: `Banner smoke ${sufijoPrueba}`,
+    subtitulo: 'Subtitulo de prueba',
+    descripcion: 'Descripcion de prueba',
+    urlImagen: imagenSubida,
+    linkReferencia: '/productos',
+    estaActivo: true,
+  }
+  let bannerCreado
+  {
+    const { res, body } = await fetchJson(base, '/banners', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bannerPrueba),
+    })
+    if (res.status === 201) {
+      bannerPruebaCreado = true
+      if (typeof body.id === 'string') bannersPruebaIds.push(body.id)
+    }
+    verificar(res.status === 201, `POST /banners esperaba 201, recibió ${res.status}`)
+    verificar(typeof body.id === 'string' && body.titulo === bannerPrueba.titulo, 'POST /banners debería devolver el banner creado')
+    verificar(
+      body.subtitulo === bannerPrueba.subtitulo &&
+        body.descripcion === bannerPrueba.descripcion &&
+        body.urlImagen === bannerPrueba.urlImagen &&
+        body.linkReferencia === bannerPrueba.linkReferencia &&
+        body.estaActivo === true,
+      'POST /banners debería conservar los campos del banner',
+    )
+    verificar(!Number.isNaN(Date.parse(body.fecha)) && body.fecha.endsWith('Z'), 'fecha del banner debería ser ISO UTC')
+    bannerCreado = body
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/banners')
+    verificar(
+      res.status === 200 && body.some((banner) => banner.id === bannerCreado.id),
+      'GET /banners debería incluir el banner creado',
+    )
+  }
+
+  const actualizacionesBanner = await Promise.all([
+    fetchJson(base, `/banners/${bannerCreado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subtitulo: 'Subtitulo editado' }),
+    }),
+    fetchJson(base, `/banners/${bannerCreado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estaActivo: false }),
+    }),
+  ])
+  verificar(actualizacionesBanner.every(({ res }) => res.status === 200), 'PATCH concurrentes /banners/:id deberían responder 200')
+  {
+    const { res, body } = await fetchJson(base, '/banners')
+    const actualizado = body.find((banner) => banner.id === bannerCreado.id)
+    verificar(
+      res.status === 200 &&
+        actualizado?.subtitulo === 'Subtitulo editado' &&
+        actualizado.estaActivo === false &&
+        actualizado.titulo === bannerPrueba.titulo,
+      'PATCH concurrentes deberían preservar los cambios de campos distintos',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/banners/2147483648', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estaActivo: false }),
+    })
+    verificar(res.status === 400 && typeof body.error === 'string', 'PATCH con id fuera de rango debería responder 400')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/banners/${bannerCreado.id}`, { method: 'DELETE' })
+    verificar(res.status === 204 && body === '', 'DELETE /banners/:id debería responder 204 sin cuerpo')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/banners/${bannerCreado.id}`, { method: 'DELETE' })
+    verificar(res.status === 404 && typeof body.error === 'string', 'DELETE /banners/:id inexistente debería responder 404')
   }
 
   {
@@ -1133,6 +1379,10 @@ try {
   }
   await Promise.all(imagenesVariantesSubidas.map((nombre) => unlink(join(raiz, 'uploads', 'productos', nombre))))
   await new Promise((resolve) => servidor.close(resolve))
+  if (bannerPruebaCreado && bannersPruebaIds.length === 0) {
+    await pool.query('DELETE FROM banners WHERE titulo = $1', [`Banner smoke ${sufijoPrueba}`])
+  }
+  await restaurarConfiguracionPrueba()
   const productosPrueba = [productoPruebaId, otroProductoPruebaId].filter(Boolean)
   if (productosPrueba.length > 0) {
     await pool.query('DELETE FROM producto WHERE id_producto = ANY($1::bigint[])', [productosPrueba])

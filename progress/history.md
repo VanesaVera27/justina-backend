@@ -104,3 +104,11 @@
 - **Acción:** se detectó que `variante` no tenía FK y que el smoke borraba productos globalmente; se agregaron migraciones condicionales, el smoke ahora aísla/limpia solo sus filas y el seed re-enlaza variantes de muestra huérfanas.
 - **Datos:** restaurados 14 productos de muestra y enlazadas 48 variantes; quedan 2 variantes `MATE-IMP-*` sin producto, preservadas. Los productos originales borrados por el smoke requieren respaldo para recuperarse.
 - **Cierre:** el repositorio expone 48 variantes de ropa; `./init.sh`, lint, smoke y reejecución del seed pasan.
+
+## 2026-11-13 — configuracion-banners — Endpoints para el frontend
+
+- **Objetivo:** implementar configuración de tienda y gestión de banners, y verificar la subida de imágenes.
+- **Tareas:** `configuracion-banners` — `done`.
+- **Archivos clave:** `src/{domain,repositories,services,controllers,routes}/{configuracion,banner}*`, `scripts/smoke.js`, `docs/http.md`.
+- **Acción:** agregados GET/PUT `/configuracion`, CRUD `/banners`, validación de IDs y PATCH parcial seguro ante actualizaciones concurrentes; el smoke verifica la URL de imagen y restaura datos.
+- **Cierre:** `./init.sh` verde (lint + smoke); revisión cerrada con fixes para rango int4 y limpieza ante fallas.

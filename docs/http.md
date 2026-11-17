@@ -113,7 +113,9 @@ respuestas.
   responde `201` con `{ "nombre": "<nombre-original>", "url": "/uploads/<nombre-original>" }`.
 - Se aceptan PNG, JPEG, GIF, WebP y AVIF de hasta 10 MB. Los archivos quedan
   disponibles en la carpeta local `uploads/`, servidos desde esa URL en el
-  mismo servidor. La extensión del nombre debe coincidir con el contenido.
+  mismo servidor. El frontend debe resolver la URL relativa contra el origen
+  del backend si frontend y API están en hosts o puertos distintos. La extensión
+  del nombre debe coincidir con el contenido.
   Los nombres deben ser únicos: si ya existe un archivo con ese nombre,
   responde `409` y no lo sobrescribe.
 - `POST /productos/:id/variantes` y
@@ -157,7 +159,35 @@ respuestas.
   multipart. Los campos `stock` y `precioUnitario` se reciben como texto
   multipart y se validan como números.
 
-## 9. Smoke
+## 9. Configuración de la tienda
+
+- `GET /configuracion` devuelve un objeto con `nombre`, `whatsapp`,
+  `emailContacto`, `instagram`, `tiktok`, `ubicacion`, `textoPreheader`,
+  `paletaSitio` y `paletaPanel`. Los campos sin valor persistido son `null`;
+  las paletas son objetos JSON o `null`.
+- `PUT /configuracion` reemplaza esos nueve campos y responde `200` con la
+  configuración guardada. `nombre` es texto no vacío; `whatsapp`,
+  `emailContacto`, `instagram`, `tiktok`, `ubicacion` y `textoPreheader`
+  aceptan texto o `null`; las paletas aceptan un objeto JSON o `null`. No se
+  admiten campos adicionales.
+- La configuración se guarda en `configuracion_web` para el primer usuario con
+  rol `Administrador`. Se requiere al menos uno para leer o guardar.
+
+## 10. Banners
+
+- `GET /banners` devuelve un array de objetos con `id` string, `titulo`,
+  `subtitulo`, `descripcion`, `urlImagen`, `linkReferencia`, `estaActivo` y
+  `fecha` ISO 8601 UTC.
+- `POST /banners` recibe `titulo` y `urlImagen` obligatorios; `subtitulo`,
+  `descripcion` y `linkReferencia` aceptan texto o `null`; `estaActivo` es
+  booleano y por defecto `true`. Responde `201` con el banner creado.
+- `PATCH /banners/:id` actualiza parcialmente esos campos y devuelve el banner
+  actualizado. `titulo` y `urlImagen`, cuando se envían, no pueden ser vacíos;
+  los campos opcionales pueden enviarse como `null`.
+- `DELETE /banners/:id` responde `204` sin cuerpo. Los ids inválidos responden
+  `400` y los banners inexistentes `404`.
+
+## 11. Smoke
 
 - `scripts/smoke.js` debe cubrir cada endpoint nuevo: status,
   `Content-Type`, forma del body y al menos un caso de error.
