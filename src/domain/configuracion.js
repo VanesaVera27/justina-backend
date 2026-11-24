@@ -8,6 +8,7 @@ const CAMPOS = [
   'textoPreheader',
   'paletaSitio',
   'paletaPanel',
+  'urlLogo',
 ]
 
 function lanzarError(mensaje) {
@@ -34,6 +35,12 @@ function validarPaleta(datos, campo) {
   return paleta
 }
 
+function validarUrlLogo(datos, campo) {
+  const urlLogo = datos[campo]
+  if (urlLogo === null || typeof urlLogo === 'string') return urlLogo
+  lanzarError(`${campo} debe ser un texto o null`)
+}
+
 export function validarConfiguracion(datos = {}) {
   if (typeof datos !== 'object' || datos === null || Array.isArray(datos)) {
     lanzarError('El cuerpo debe ser un objeto')
@@ -55,5 +62,6 @@ export function validarConfiguracion(datos = {}) {
     textoPreheader: validarTexto(datos, 'textoPreheader'),
     paletaSitio: validarPaleta(datos, 'paletaSitio'),
     paletaPanel: validarPaleta(datos, 'paletaPanel'),
+    urlLogo: validarUrlLogo(datos, 'urlLogo'),
   }
 }

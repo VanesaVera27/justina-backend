@@ -94,6 +94,9 @@ respuestas.
   editar se acepta una categoría existente o `null`; el borrado de una
   categoría exige reasignar esos productos o establecer su `categoriaId` a
   `null` antes de eliminarla.
+- Los productos exponen `esDestacado` como booleano real, con default `false`.
+  `POST /productos` lo acepta opcionalmente y `PATCH /productos/:id` acepta
+  `true` o `false`; cualquier otro tipo responde `400` con `{ "error": "..." }`.
 - Los productos exponen `fotoPortadaUrl` como una URL de sus fotos de variante
   o `null` para selección automática. `PATCH /productos/:id` acepta ese campo;
   una URL no nula debe pertenecer a una foto de una variante del mismo
@@ -163,15 +166,21 @@ respuestas.
 
 - `GET /configuracion` devuelve un objeto con `nombre`, `whatsapp`,
   `emailContacto`, `instagram`, `tiktok`, `ubicacion`, `textoPreheader`,
-  `paletaSitio` y `paletaPanel`. Los campos sin valor persistido son `null`;
-  las paletas son objetos JSON o `null`.
-- `PUT /configuracion` reemplaza esos nueve campos y responde `200` con la
-  configuración guardada. `nombre` es texto no vacío; `whatsapp`,
-  `emailContacto`, `instagram`, `tiktok`, `ubicacion` y `textoPreheader`
-  aceptan texto o `null`; las paletas aceptan un objeto JSON o `null`. No se
-  admiten campos adicionales.
+  `paletaSitio`, `paletaPanel` y `urlLogo`. Los campos sin valor persistido
+  son `null`; las paletas son objetos JSON o `null`. `urlLogo` es la URL
+  relativa del logo (`string`) o `null`, y se devuelve tal cual se guardó, sin
+  normalizarla ni resolverla.
+- `PUT /configuracion` reemplaza esos diez campos (todos obligatorios) y
+  responde `200` con la configuración guardada. `nombre` es texto no vacío;
+  `whatsapp`, `emailContacto`, `instagram`, `tiktok`, `ubicacion` y
+  `textoPreheader` aceptan texto o `null`; las paletas aceptan un objeto JSON o
+  `null`. `urlLogo` acepta un `string` o `null`: `null` quita el logo y
+  cualquier cadena se guarda y devuelve tal cual la envió el frontend (por
+  ejemplo `/imagenes/logo-abc.png`), sin validar formato de URL. No se admiten
+  campos adicionales.
 - La configuración se guarda en `configuracion_web` para el primer usuario con
-  rol `Administrador`. Se requiere al menos uno para leer o guardar.
+  rol `Administrador`, con `url_logo` como clave del logo. Se requiere al
+  menos uno para leer o guardar.
 
 ## 10. Banners
 

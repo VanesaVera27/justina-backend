@@ -174,6 +174,7 @@ END
 $$;
 
 ALTER TABLE producto ADD COLUMN IF NOT EXISTS foto_portada_url VARCHAR(500);
+ALTER TABLE producto ADD COLUMN IF NOT EXISTS es_destacado BOOLEAN DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS especificaciones (
     id_especificacion BIGSERIAL PRIMARY KEY,

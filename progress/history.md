@@ -112,3 +112,20 @@
 - **Archivos clave:** `src/{domain,repositories,services,controllers,routes}/{configuracion,banner}*`, `scripts/smoke.js`, `docs/http.md`.
 - **Acción:** agregados GET/PUT `/configuracion`, CRUD `/banners`, validación de IDs y PATCH parcial seguro ante actualizaciones concurrentes; el smoke verifica la URL de imagen y restaura datos.
 - **Cierre:** `./init.sh` verde (lint + smoke); revisión cerrada con fixes para rango int4 y limpieza ante fallas.
+
+## 2026-11-18 — productos-es-destacado — Flag de destacado en productos
+
+- **Objetivo:** desbloquear el frontend de productos destacados exponiendo el flag en la API.
+- **Tareas:** `productos-es-destacado` — `done` (reviewer `APPROVED`).
+- **Archivos clave:** `src/domain/producto.js`, `src/repositories/productoRepository.js`, `db/schema.sql`, `scripts/smoke.js`, `docs/http.md`.
+- **Acción:** default `false` y validación booleana, mapeo y persistencia en BD, `ALTER TABLE ... IF NOT EXISTS` idempotente y smoke extendido con relectura y caso 400.
+- **Cierre:** `./init.sh` verde (lint + smoke); sin cambios en servicios, controladores, rutas ni frontend.
+
+## 2026-11-23 — configuracion-url-logo — Logo editable en la configuración
+
+- **Objetivo:** permitir guardar y leer `urlLogo` (string | null) en GET/PUT `/configuracion` sin error de whitelist.
+- **Tareas:** `configuracion-url-logo` — `done` (reviewer `APPROVED`).
+- **Archivos clave:** `src/domain/configuracion.js`, `src/repositories/configuracionRepository.js`, `scripts/smoke.js`, `docs/http.md`.
+- **Acción:** `urlLogo` pasó a ser campo obligatorio `string | null`, persistido como `url_logo` en `configuracion_web` y devuelto tal cual; `null` quita el logo sin error.
+- **Verificación:** smoke con URL, null y 400 por tipo inválido, con restauración del valor previo; smoke manual con curl; servicios, controladores, rutas y POST /imagenes intactos.
+- **Cierre:** `./init.sh` verde (23 tareas, lint + smoke).

@@ -10,6 +10,7 @@ const CLAVES = [
   'texto_preheader',
   'paleta_sitio',
   'paleta_panel',
+  'url_logo',
 ]
 
 function lanzarError(status, mensaje) {
@@ -69,6 +70,7 @@ function mapearConfiguracion(filas) {
       ? colorPrincipalAnterior ? { principal: colorPrincipalAnterior } : null
       : leerPaleta(paletaSitio, 'paleta_sitio'),
     paletaPanel: leerPaleta(valores.get('paleta_panel'), 'paleta_panel'),
+    urlLogo: valorTexto(valores, 'url_logo'),
   }
 }
 
@@ -117,6 +119,7 @@ export async function guardarConfiguracion(configuracion) {
       ['texto_preheader', configuracion.textoPreheader],
       ['paleta_sitio', configuracion.paletaSitio === null ? null : JSON.stringify(configuracion.paletaSitio)],
       ['paleta_panel', configuracion.paletaPanel === null ? null : JSON.stringify(configuracion.paletaPanel)],
+      ['url_logo', configuracion.urlLogo],
     ]
     for (const [clave, valor] of valores) {
       const ids = porClave.get(clave) ?? []

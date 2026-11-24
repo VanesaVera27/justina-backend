@@ -81,7 +81,7 @@ async function restaurarConfiguracionPrueba() {
            AND NOT EXISTS (
              SELECT 1 FROM banners b WHERE b.id_configuracion = cw.id_configuracion
            )`,
-        [configuracionAdminId, ['nombre_tienda', 'whatsapp', 'email_contacto', 'instagram', 'tiktok', 'ubicacion', 'texto_preheader', 'paleta_sitio', 'paleta_panel'], idsOriginales],
+        [configuracionAdminId, ['nombre_tienda', 'whatsapp', 'email_contacto', 'instagram', 'tiktok', 'ubicacion', 'texto_preheader', 'paleta_sitio', 'paleta_panel', 'url_logo'], idsOriginales],
       )
       if (temporales.rowCount > 0) {
         await cliente.query(
@@ -120,7 +120,7 @@ try {
        WHERE id_usuario = $1
          AND clave = ANY($2::text[])
        ORDER BY id_configuracion`,
-      [configuracionAdminId, ['nombre_tienda', 'whatsapp', 'email_contacto', 'instagram', 'tiktok', 'ubicacion', 'texto_preheader', 'paleta_sitio', 'paleta_panel']],
+      [configuracionAdminId, ['nombre_tienda', 'whatsapp', 'email_contacto', 'instagram', 'tiktok', 'ubicacion', 'texto_preheader', 'paleta_sitio', 'paleta_panel', 'url_logo']],
     )
     configuracionOriginal = filas.rows
   }
@@ -154,11 +154,12 @@ try {
     const { res, body } = await fetchJson(base, '/configuracion')
     verificar(res.status === 200, `GET /configuracion esperaba 200, recibió ${res.status}`)
     verificar(
-      ['nombre', 'whatsapp', 'emailContacto', 'instagram', 'tiktok', 'ubicacion', 'textoPreheader', 'paletaSitio', 'paletaPanel'].every((campo) => Object.hasOwn(body, campo)),
+      ['nombre', 'whatsapp', 'emailContacto', 'instagram', 'tiktok', 'ubicacion', 'textoPreheader', 'paletaSitio', 'paletaPanel', 'urlLogo'].every((campo) => Object.hasOwn(body, campo)),
       'GET /configuracion debería devolver todos los campos del contrato',
     )
   }
 
+  const urlLogoPrueba = '/imagenes/logo-abc.png'
   const configuracionPrueba = {
     nombre: `Tienda smoke ${sufijoPrueba}`,
     whatsapp: '+54 9 11 2525-0523',
@@ -169,6 +170,7 @@ try {
     textoPreheader: `Oferta smoke ${sufijoPrueba}`,
     paletaSitio: { principal: '#123456', texto: '#ffffff' },
     paletaPanel: { principal: '#654321', fondo: '#f0f0f0' },
+    urlLogo: urlLogoPrueba,
   }
   {
     const { res, body } = await fetchJson(base, '/configuracion', {
@@ -181,11 +183,46 @@ try {
       JSON.stringify(body) === JSON.stringify(configuracionPrueba),
       'PUT /configuracion debería devolver los valores persistidos',
     )
+    verificar(body.urlLogo === urlLogoPrueba, 'PUT /configuracion debería devolver urlLogo tal cual se envió, sin normalizarla')
+    const filaLogo = await pool.query(
+      `SELECT valor FROM configuracion_web
+       WHERE id_usuario = $1 AND clave = 'url_logo'
+       ORDER BY id_configuracion DESC LIMIT 1`,
+      [configuracionAdminId],
+    )
+    verificar(
+      filaLogo.rows[0]?.valor === urlLogoPrueba,
+      'PUT /configuracion debería persistir urlLogo en configuracion_web con clave url_logo',
+    )
     const { res: resGet, body: bodyGet } = await fetchJson(base, '/configuracion')
     verificar(
       resGet.status === 200 && JSON.stringify(bodyGet) === JSON.stringify(configuracionPrueba),
       'GET /configuracion debería leer los cambios guardados',
     )
+    verificar(bodyGet.urlLogo === urlLogoPrueba, 'GET /configuracion debería devolver la URL guardada tal cual')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/configuracion', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...configuracionPrueba, urlLogo: null }),
+    })
+    verificar(res.status === 200 && body.urlLogo === null, 'PUT /configuracion con urlLogo null debería quitar el logo sin error')
+    const { res: resGet, body: bodyGet } = await fetchJson(base, '/configuracion')
+    verificar(
+      resGet.status === 200 && bodyGet.urlLogo === null,
+      'GET /configuracion debería devolver urlLogo null tras quitar el logo',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/configuracion', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...configuracionPrueba, urlLogo: 123 }),
+    })
+    verificar(res.status === 400 && typeof body.error === 'string', 'PUT /configuracion con urlLogo de tipo inválido debería responder 400')
   }
 
   {
@@ -208,6 +245,7 @@ try {
       textoPreheader: null,
       paletaSitio: null,
       paletaPanel: null,
+      urlLogo: null,
     }
     const { res, body } = await fetchJson(base, '/configuracion', {
       method: 'PUT',
@@ -223,7 +261,8 @@ try {
         body.ubicacion === null &&
         body.textoPreheader === null &&
         body.paletaSitio === null &&
-        body.paletaPanel === null,
+        body.paletaPanel === null &&
+        body.urlLogo === null,
       'PUT /configuracion debería permitir limpiar campos opcionales',
     )
   }
@@ -477,6 +516,7 @@ try {
     verificar(body.precioUnitario === null, 'el producto sin variantes debería exponer precioUnitario null')
     verificar(body.categoriaId === categoriaCreada.id, 'POST /productos debería devolver categoriaId')
     verificar(body.fotoPortadaUrl === null, 'el producto nuevo debería exponer fotoPortadaUrl null')
+    verificar(body.esDestacado === false, 'el producto nuevo debería exponer esDestacado false por default')
     verificar(body.estado === 'activo', 'POST /productos debería default a estado "activo"')
     verificar(!Number.isNaN(Date.parse(body.creadoEn)) && body.creadoEn.endsWith('Z'), 'creadoEn debería ser ISO UTC')
     verificar(body.actualizadoEn === body.creadoEn, 'actualizadoEn debería coincidir con creadoEn al crear')
@@ -485,17 +525,18 @@ try {
     productoPruebaId = body.id
   }
 
-  // POST producto con defaults
+  // POST producto con defaults de marca/categoria y esDestacado true
   let otroProducto
   {
     const { res, body } = await fetchJson(base, '/productos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre: nombreOtroProductoPrueba }),
+      body: JSON.stringify({ nombre: nombreOtroProductoPrueba, esDestacado: true }),
     })
     verificar(res.status === 201, `POST /productos con defaults esperaba 201, recibió ${res.status}`)
     verificar(body.marca === null, 'marca debería default a null')
     verificar(body.categoriaId === null, 'categoriaId debería default a null')
+    verificar(body.esDestacado === true, 'POST debería aceptar y devolver esDestacado true')
     otroProducto = body
     otroProductoPruebaId = body.id
   }
@@ -511,6 +552,11 @@ try {
       'GET /productos debería incluir ambos productos creados',
     )
     verificar(body.find((producto) => producto.id === creado.id)?.categoriaId === categoriaCreada.id, 'GET /productos debería incluir categoriaId')
+    verificar(
+      body.find((producto) => producto.id === creado.id)?.esDestacado === false &&
+        body.find((producto) => producto.id === otroProducto.id)?.esDestacado === true,
+      'GET /productos debería exponer esDestacado segun lo persistido',
+    )
   }
 
   // GET por id con variantes default []
@@ -520,6 +566,7 @@ try {
     verificar(body.id === creado.id && body.nombre === nombreProductoPrueba, 'GET /productos/:id debería devolver el producto creado')
     verificar(body.categoriaId === categoriaCreada.id, 'GET /productos/:id debería incluir categoriaId')
     verificar(body.fotoPortadaUrl === null, 'GET /productos/:id debería incluir fotoPortadaUrl null')
+    verificar(body.esDestacado === false, 'GET /productos/:id debería incluir esDestacado false')
     verificar(Array.isArray(body.variantes) && body.variantes.length === 0, 'GET /productos/:id debería incluir variantes como array vacío por defecto')
   }
 
@@ -543,6 +590,17 @@ try {
     })
     verificar(res.status === 400, `POST con estado inválido esperaba 400, recibió ${res.status}`)
     verificar(typeof body.error === 'string', 'POST con estado inválido debería devolver { "error": "..." }')
+  }
+
+  // POST esDestacado no booleano → 400
+  {
+    const { res, body } = await fetchJson(base, '/productos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: 'X', esDestacado: 'true' }),
+    })
+    verificar(res.status === 400, `POST con esDestacado no booleano esperaba 400, recibió ${res.status}`)
+    verificar(typeof body.error === 'string', 'POST con esDestacado no booleano debería devolver { "error": "..." }')
   }
 
   // GET id inexistente → 404
@@ -1232,6 +1290,37 @@ try {
     verificar(actualizado >= antes, 'PATCH debería refrescar actualizadoEn')
   }
 
+  // PATCH esDestacado true y false, persistido en GET id y coleccion
+  {
+    const { res, body } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ esDestacado: true }),
+    })
+    verificar(res.status === 200 && body.esDestacado === true, 'PATCH esDestacado true debería devolver true')
+    const { body: individual } = await fetchJson(base, `/productos/${creado.id}`)
+    verificar(individual.esDestacado === true, 'GET /productos/:id debería devolver esDestacado true persistido')
+    const { body: coleccion } = await fetchJson(base, '/productos')
+    verificar(
+      coleccion.find((producto) => producto.id === creado.id)?.esDestacado === true,
+      'GET /productos debería devolver esDestacado true persistido',
+    )
+
+    const { res: resFalse, body: bodyFalse } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ esDestacado: false }),
+    })
+    verificar(resFalse.status === 200 && bodyFalse.esDestacado === false, 'PATCH esDestacado false debería devolver false')
+    const { body: individualFalse } = await fetchJson(base, `/productos/${creado.id}`)
+    verificar(individualFalse.esDestacado === false, 'GET /productos/:id debería devolver esDestacado false persistido')
+    const { body: coleccionFalse } = await fetchJson(base, '/productos')
+    verificar(
+      coleccionFalse.find((producto) => producto.id === creado.id)?.esDestacado === false,
+      'GET /productos debería devolver esDestacado false persistido',
+    )
+  }
+
   // PATCH permite desligar la categoría enviando null
   {
     const { res, body } = await fetchJson(base, `/productos/${creado.id}`, {
@@ -1281,6 +1370,17 @@ try {
     })
     verificar(res.status === 400, `PATCH con estado inválido esperaba 400, recibió ${res.status}`)
     verificar(typeof body.error === 'string', 'PATCH con estado inválido debería devolver { "error": "..." }')
+  }
+
+  // PATCH esDestacado no booleano → 400
+  {
+    const { res, body } = await fetchJson(base, `/productos/${creado.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ esDestacado: 'true' }),
+    })
+    verificar(res.status === 400, `PATCH con esDestacado no booleano esperaba 400, recibió ${res.status}`)
+    verificar(typeof body.error === 'string', 'PATCH con esDestacado no booleano debería devolver { "error": "..." }')
   }
 
   // PATCH id inexistente → 404

@@ -17,7 +17,7 @@ function validarCategoriaId(categoriaId) {
 // derivado (minimo de sus variantes, null si no tiene) y las fotos viven en
 // las variantes. Dominio puro: valida y arma el dato de dominio.
 export function crearProducto(datos = {}) {
-  const { nombre, descripcion = null, marca = null, estado = 'activo', categoriaId = null } = datos
+  const { nombre, descripcion = null, marca = null, estado = 'activo', categoriaId = null, esDestacado = false } = datos
 
   if (typeof nombre !== 'string' || nombre.trim() === '') {
     lanzarError(400, 'El nombre es obligatorio')
@@ -35,6 +35,10 @@ export function crearProducto(datos = {}) {
     lanzarError(400, 'El estado debe ser "activo" o "inactivo"')
   }
 
+  if (typeof esDestacado !== 'boolean') {
+    lanzarError(400, 'esDestacado debe ser booleano')
+  }
+
   const ahora = new Date().toISOString()
 
   return {
@@ -44,6 +48,7 @@ export function crearProducto(datos = {}) {
     marca: typeof marca === 'string' && marca.trim() !== '' ? marca.trim() : null,
     categoriaId: validarCategoriaId(categoriaId),
     fotoPortadaUrl: null,
+    esDestacado,
     estado,
     variantes: [],
     creadoEn: ahora,
@@ -212,6 +217,7 @@ const CAMPOS_EDITABLES = new Set([
   'estado',
   'categoriaId',
   'fotoPortadaUrl',
+  'esDestacado',
 ])
 
 export function editarProducto(producto, cambios = {}) {
@@ -271,6 +277,13 @@ export function editarProducto(producto, cambios = {}) {
       lanzarError(400, 'La fotoPortadaUrl debe ser un string de hasta 500 caracteres o null')
     }
     editado.fotoPortadaUrl = cambios.fotoPortadaUrl === null ? null : cambios.fotoPortadaUrl.trim()
+  }
+
+  if ('esDestacado' in cambios) {
+    if (typeof cambios.esDestacado !== 'boolean') {
+      lanzarError(400, 'esDestacado debe ser booleano')
+    }
+    editado.esDestacado = cambios.esDestacado
   }
 
   editado.actualizadoEn = new Date().toISOString()

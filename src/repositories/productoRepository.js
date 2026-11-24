@@ -113,6 +113,7 @@ function filasAProducto(filaProducto, { filas = [], atributosPorVariante = new M
     marca: filaProducto.marca,
     categoriaId: filaProducto.id_categoria == null ? null : String(filaProducto.id_categoria),
     fotoPortadaUrl: filaProducto.foto_portada_url ?? null,
+    esDestacado: Boolean(filaProducto.es_destacado),
     precioUnitario: precioDerivado,
     estado: filaProducto.activo ? 'activo' : 'inactivo',
     creadoEn: filaProducto.fecha_creacion.toISOString(),
@@ -160,10 +161,10 @@ async function guardarAtributosVariante(cliente, idVariante, atributos) {
 
 export async function crearProducto(producto) {
   const resultado = await pool.query(
-    `INSERT INTO producto (nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url`,
-    [producto.nombre, producto.descripcion, producto.marca, producto.estado === 'activo', producto.creadoEn, producto.actualizadoEn, producto.categoriaId, producto.fotoPortadaUrl],
+    `INSERT INTO producto (nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url, es_destacado)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url, es_destacado`,
+    [producto.nombre, producto.descripcion, producto.marca, producto.estado === 'activo', producto.creadoEn, producto.actualizadoEn, producto.categoriaId, producto.fotoPortadaUrl, producto.esDestacado],
   ).catch((error) => {
     throw errorDesdePostgres(error, {
       '23503': { status: 400, texto: 'categoriaId no existe' },
@@ -176,7 +177,7 @@ export async function crearProducto(producto) {
 
 export async function listarProductos() {
   const resultado = await pool.query(
-    'SELECT id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url FROM producto ORDER BY fecha_creacion, id_producto',
+    'SELECT id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url, es_destacado FROM producto ORDER BY fecha_creacion, id_producto',
   )
   const cargadas = await cargarVariantesDeProductos(resultado.rows.map((fila) => String(fila.id_producto)))
   return resultado.rows.map((fila) => filasAProducto(fila, cargadas))
@@ -184,7 +185,7 @@ export async function listarProductos() {
 
 export async function buscarProductoPorId(id) {
   const resultado = await pool.query(
-    'SELECT id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url FROM producto WHERE id_producto = $1',
+    'SELECT id_producto, nombre, descripcion, marca, activo, fecha_creacion, fecha_modificacion, id_categoria, foto_portada_url, es_destacado FROM producto WHERE id_producto = $1',
     [id],
   )
   if (resultado.rows.length === 0) return null
@@ -195,9 +196,9 @@ export async function buscarProductoPorId(id) {
 export async function guardarProducto(producto) {
   const resultado = await pool.query(
     `UPDATE producto
-     SET nombre = $2, descripcion = $3, marca = $4, activo = $5, fecha_modificacion = $6, id_categoria = $7, foto_portada_url = $8
+     SET nombre = $2, descripcion = $3, marca = $4, activo = $5, fecha_modificacion = $6, id_categoria = $7, foto_portada_url = $8, es_destacado = $9
      WHERE id_producto = $1`,
-    [producto.id, producto.nombre, producto.descripcion, producto.marca, producto.estado === 'activo', producto.actualizadoEn, producto.categoriaId, producto.fotoPortadaUrl],
+    [producto.id, producto.nombre, producto.descripcion, producto.marca, producto.estado === 'activo', producto.actualizadoEn, producto.categoriaId, producto.fotoPortadaUrl, producto.esDestacado],
   ).catch((error) => {
     throw errorDesdePostgres(error, {
       '23503': { status: 400, texto: 'categoriaId no existe' },

@@ -313,6 +313,33 @@
         "docs/http.md describe el contrato nuevo y ./init.sh termina verde"
       ],
       "status": "done"
+    },
+    {
+      "name": "productos-es-destacado",
+      "title": "Exponer esDestacado en la API de productos",
+      "description": "Hacer que el booleano de producto destacado exista de punta a punta en la API: GET /productos y GET /productos/:id lo devuelven, POST lo acepta con default false y PATCH /productos/:id lo acepta y persiste. La columna es_destacado ya esta en db/schema.sql:111 (y los inserts ya la escriben), pero falta en el mapper filasAProducto, en los SELECT/INSERT/UPDATE de productoRepository.js y en la whitelist CAMPOS_EDITABLES de src/domain/producto.js, que hoy responde 400 'El campo esDestacado no es editable o no existe'. Seguir el patron exacto de categoria esDestacada: default false en crearProducto, validacion estricta typeof === 'boolean' con error 400, mapeo Boolean(fila.es_destacado) y persistencia. Agregar un ALTER TABLE producto ADD COLUMN IF NOT EXISTS es_destacado BOOLEAN DEFAULT FALSE idempotente como los ya existentes en db/schema.sql:176 y :283, porque la base actual ya fue creada. Actualizar docs/http.md con el campo en el contrato de productos y extender scripts/smoke.js con el flujo completo (default en POST, PATCH true y false, GET individual y coleccion, y 400 por tipo invalido). No tocar servicios, controladores ni rutas (son pass-through), ni el frontend, ni la coleccion Postman.",
+      "acceptance": [
+        "GET /productos y GET /productos/:id devuelven esDestacado como booleano real, false para los productos que no lo tenian marcado",
+        "POST /productos acepta esDestacado con default false y PATCH /productos/:id acepta true/false, valida el tipo con 400 { error } si no es booleano y persiste el cambio",
+        "db/schema.sql conserva la columna es_destacado y agrega un ALTER TABLE ... ADD COLUMN IF NOT EXISTS idempotente para bases ya creadas",
+        "scripts/smoke.js cubre default en POST, PATCH true y false, GET individual y coleccion con el valor persistido y el caso de error 400; ./init.sh termina verde",
+        "docs/http.md documenta esDestacado en el contrato de productos; sin cambios en servicios, controladores, rutas ni frontend"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "configuracion-url-logo",
+      "title": "Agregar urlLogo a la configuración de la tienda",
+      "description": "Agregar urlLogo al contrato de GET/PUT /configuracion. Hoy el campo está fuera de la whitelist del dominio y PUT responde 400 'El campo \"urlLogo\" no es editable o no existe'. El frontend envía siempre el payload de la configuración más urlLogo: null cuando no hay logo o cuando el admin aprieta 'Quitar', y un string con la URL relativa devuelta por POST /imagenes (ej. /imagenes/logo-abc.png). Debe aceptarse como campo obligatorio de tipo string | null (se suma a CAMPOS y a los campos requeridos), persistirse en configuracion_web junto al resto de los campos (clave url_logo) y devolverse tal cual en GET y en la respuesta del PUT, sin normalizarla ni resolverla. No requiere endpoint nuevo, cambios en POST /imagenes ni lógica especial de rebuild: el frontend lee la configuración del API en runtime. Actualizar docs/http.md y scripts/smoke.js.",
+      "acceptance": [
+        "GET /configuracion devuelve \"urlLogo\": null si no hay logo registrado, o la URL guardada como string, sin normalizarla ni resolverla",
+        "PUT /configuracion acepta urlLogo como campo obligatorio string | null, agregado a la whitelist y a los campos requeridos; null es válido para quitar el logo y no responde error; un tipo inválido responde 400 con { \"error\": \"...\" }",
+        "El valor se persiste en configuracion_web junto al resto de los campos y se recupera en la respuesta del PUT y en un GET posterior",
+        "El string se guarda y devuelve tal cual lo envió el frontend (ej. /imagenes/logo-abc.png), sin reescribirlo ni validar formato de URL",
+        "docs/http.md documenta urlLogo en el contrato de /configuracion y scripts/smoke.js cubre PUT con URL, PUT con null, GET con valor guardado y con null, y el 400 por tipo inválido, restaurando el valor previo de la configuración",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
     }
   ]
 }
