@@ -15,10 +15,15 @@ let imagenSubida
 let categoriaPruebaId
 let productoPruebaId
 let otroProductoPruebaId
+let usuarioPruebaId
+let segundoUsuarioPruebaId
+let pedidoPruebaId
 let configuracionAdminId
 let configuracionOriginal = []
 const imagenesVariantesSubidas = []
 const bannersPruebaIds = []
+const usuariosPruebaIds = []
+const direccionesPruebaIds = []
 let bannerPruebaCreado = false
 const sufijoPrueba = `${Date.now()}-${process.pid}`
 const nombreProductoPrueba = `Mate imperial smoke-${sufijoPrueba}`
@@ -123,6 +128,223 @@ try {
       [configuracionAdminId, ['nombre_tienda', 'whatsapp', 'email_contacto', 'instagram', 'tiktok', 'ubicacion', 'texto_preheader', 'paleta_sitio', 'paleta_panel']],
     )
     configuracionOriginal = filas.rows
+  }
+
+  const rolPrueba = await pool.query('SELECT id_roles FROM roles ORDER BY id_roles LIMIT 1')
+  verificar(rolPrueba.rowCount === 1, 'el smoke requiere al menos un rol para probar usuarios')
+  const emailUsuarioPrueba = `smoke-${sufijoPrueba}@example.com`
+  const payloadUsuarioPrueba = {
+    nombre: 'Usuario',
+    apellido: 'Smoke',
+    email: emailUsuarioPrueba,
+    contrasena: 'contrasena-smoke-inicial',
+    idRol: String(rolPrueba.rows[0].id_roles),
+  }
+  {
+    const { res, body } = await fetchJson(base, '/usuarios')
+    verificar(res.status === 200 && Array.isArray(body), 'GET /usuarios debería devolver un array')
+    verificar(res.headers.get('content-type') === 'application/json; charset=utf-8', 'GET /usuarios debería responder JSON')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payloadUsuarioPrueba),
+    })
+    verificar(res.status === 201, `POST /usuarios esperaba 201, recibió ${res.status}`)
+    verificar(typeof body.id === 'string' && body.email === emailUsuarioPrueba, 'POST /usuarios debería devolver id string y email')
+    verificar(body.emailVerificado === false && body.activo === true, 'POST /usuarios debería aplicar defaults')
+    verificar(!Object.hasOwn(body, 'contrasena') && !Object.hasOwn(body, 'passwordHash'), 'la respuesta no debe exponer credenciales')
+    verificar(!Number.isNaN(Date.parse(body.fechaCreacion)) && body.fechaCreacion.endsWith('Z'), 'fechaCreacion debería ser ISO UTC')
+    usuarioPruebaId = body.id
+    usuariosPruebaIds.push(usuarioPruebaId)
+    const credencial = await pool.query('SELECT password_hash FROM usuario WHERE id_usuario = $1', [usuarioPruebaId])
+    verificar(
+      credencial.rows[0].password_hash.startsWith('scrypt$') &&
+        credencial.rows[0].password_hash !== payloadUsuarioPrueba.contrasena,
+      'la contraseña debería persistirse con hash scrypt, no en texto plano',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payloadUsuarioPrueba),
+    })
+    verificar(res.status === 409 && typeof body.error === 'string', 'POST /usuarios con email duplicado debería responder 409')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: 'Incompleto' }),
+    })
+    verificar(res.status === 400 && typeof body.error === 'string', 'POST /usuarios incompleto debería responder 400')
+  }
+
+  {
+    const cambiosUsuario = {
+      nombre: 'Usuario Editado',
+      apellido: 'Smoke Editado',
+      email: `editado-${sufijoPrueba}@example.com`,
+      contrasena: 'contrasena-smoke-actualizada',
+      idRol: String(rolPrueba.rows[0].id_roles),
+      emailVerificado: true,
+      dni: '12345678',
+      telefono: '+5491100000000',
+      activo: false,
+    }
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cambiosUsuario),
+    })
+    verificar(res.status === 200, `PATCH /usuarios/:id esperaba 200, recibió ${res.status}`)
+    verificar(
+      body.nombre === cambiosUsuario.nombre &&
+        body.apellido === cambiosUsuario.apellido &&
+        body.email === cambiosUsuario.email &&
+        body.emailVerificado === true &&
+        body.dni === cambiosUsuario.dni &&
+        body.telefono === cambiosUsuario.telefono &&
+        body.activo === false,
+      'PATCH /usuarios debería actualizar todos los campos editables',
+    )
+    verificar(!Object.hasOwn(body, 'contrasena') && !Object.hasOwn(body, 'passwordHash'), 'PATCH no debe exponer credenciales')
+    const credencial = await pool.query('SELECT password_hash FROM usuario WHERE id_usuario = $1', [usuarioPruebaId])
+    verificar(
+      credencial.rows[0].password_hash.startsWith('scrypt$') &&
+        credencial.rows[0].password_hash !== cambiosUsuario.contrasena,
+      'PATCH debería actualizar la contraseña como hash scrypt',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}`)
+    verificar(res.status === 200 && body.id === usuarioPruebaId, 'GET /usuarios/:id debería devolver el usuario persistido')
+    verificar(body.activo === false && body.emailVerificado === true, 'GET /usuarios/:id debería incluir los cambios persistidos')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios/0')
+    verificar(res.status === 400 && typeof body.error === 'string', 'GET /usuarios con id inválido debería responder 400')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios/999999999')
+    verificar(res.status === 404 && typeof body.error === 'string', 'GET /usuarios inexistente debería responder 404')
+  }
+
+  const direccionInicial = {
+    calle: 'Calle Smoke',
+    numero: '101',
+    localidad: 'Ciudad Smoke',
+    codigoPostal: '1000',
+    provincia: 'Buenos Aires',
+    pais: 'Argentina',
+    dpto: null,
+    esPrincipal: true,
+  }
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/direcciones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(direccionInicial),
+    })
+    verificar(res.status === 201 && typeof body.id === 'string', 'POST dirección debería responder 201 con id string')
+    verificar(body.calle === direccionInicial.calle && body.esPrincipal === true, 'POST dirección debería devolver los campos enviados')
+    direccionesPruebaIds.push(body.id)
+    const listado = await fetchJson(base, `/usuarios/${usuarioPruebaId}/direcciones`)
+    verificar(listado.res.status === 200 && listado.body.length === 1, 'GET direcciones debería listar la dirección del usuario')
+    verificar(listado.body[0].codigoPostal === '1000', 'GET direcciones debería usar codigoPostal')
+  }
+
+  let direccionSecundaria
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/direcciones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...direccionInicial, calle: 'Otra calle Smoke', esPrincipal: true }),
+    })
+    verificar(res.status === 201, 'POST segunda dirección debería responder 201')
+    direccionSecundaria = body
+    direccionesPruebaIds.push(body.id)
+    const listado = await fetchJson(base, `/usuarios/${usuarioPruebaId}/direcciones`)
+    verificar(
+      listado.body.filter((direccion) => direccion.esPrincipal).length === 1 &&
+        listado.body.find((direccion) => direccion.id === direccionesPruebaIds[0]).esPrincipal === false,
+      'cada usuario debería tener como máximo una dirección principal',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payloadUsuarioPrueba,
+        nombre: 'Segundo',
+        email: `segundo-${sufijoPrueba}@example.com`,
+      }),
+    })
+    verificar(res.status === 201, 'POST segundo usuario debería responder 201')
+    segundoUsuarioPruebaId = body.id
+    usuariosPruebaIds.push(segundoUsuarioPruebaId)
+    await pool.query(
+      'INSERT INTO usuario_direccion (id_direccion, id_usuario, es_principal) VALUES ($1, $2, FALSE)',
+      [direccionesPruebaIds[0], segundoUsuarioPruebaId],
+    )
+  }
+
+  {
+    const idDireccionCompartida = direccionesPruebaIds[0]
+    const { res, body } = await fetchJson(
+      base,
+      `/usuarios/${usuarioPruebaId}/direcciones/${idDireccionCompartida}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ calle: 'Calle privada Smoke', esPrincipal: true }),
+      },
+    )
+    verificar(res.status === 200 && body.id !== idDireccionCompartida, 'editar una dirección compartida debería crear una copia para el usuario')
+    verificar(body.calle === 'Calle privada Smoke' && body.esPrincipal === true, 'PATCH dirección debería devolver la copia editada')
+    direccionesPruebaIds.push(body.id)
+    const delSegundo = await fetchJson(base, `/usuarios/${segundoUsuarioPruebaId}/direcciones`)
+    verificar(
+      delSegundo.body.length === 1 &&
+        delSegundo.body[0].id === idDireccionCompartida &&
+        delSegundo.body[0].calle === direccionInicial.calle,
+      'editar una dirección compartida no debería alterar al otro usuario',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/direcciones/999999999`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calle: 'No existe' }),
+    })
+    verificar(res.status === 404 && typeof body.error === 'string', 'PATCH dirección no asociada debería responder 404')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/direcciones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ calle: 'Incompleta' }),
+    })
+    verificar(res.status === 400 && typeof body.error === 'string', 'POST dirección incompleta debería responder 400')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/direcciones/${direccionesPruebaIds[2]}`, {
+      method: 'DELETE',
+    })
+    verificar(res.status === 204 && body === '', 'DELETE dirección debería responder 204 sin cuerpo')
   }
 
   // POST /imagenes guarda y publica el archivo recibido
@@ -498,6 +720,131 @@ try {
     verificar(body.categoriaId === null, 'categoriaId debería default a null')
     otroProducto = body
     otroProductoPruebaId = body.id
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/favoritos`, {
+      method: 'GET',
+    })
+    verificar(res.status === 200 && Array.isArray(body), 'GET favoritos debería devolver un array')
+    verificar(body.length === 0, 'un usuario nuevo debería comenzar sin favoritos')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/favoritos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productoId: creado.id }),
+    })
+    verificar(res.status === 201 && body.productoId === creado.id, 'POST favorito debería responder 201 con productoId')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/favoritos`)
+    verificar(
+      res.status === 200 &&
+        body.length === 1 &&
+        body[0].id === creado.id &&
+        body[0].nombre === nombreProductoPrueba,
+      'GET favoritos debería devolver el producto agregado',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/favoritos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ productoId: creado.id }),
+    })
+    verificar(res.status === 409 && typeof body.error === 'string', 'POST favorito duplicado debería responder 409')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/favoritos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    verificar(res.status === 400 && typeof body.error === 'string', 'POST favorito sin productoId debería responder 400')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/favoritos/${creado.id}`, {
+      method: 'DELETE',
+    })
+    verificar(res.status === 204 && body === '', 'DELETE favorito debería responder 204 sin cuerpo')
+    const favoritos = await fetchJson(base, `/usuarios/${usuarioPruebaId}/favoritos`)
+    verificar(favoritos.res.status === 200 && favoritos.body.length === 0, 'DELETE favorito debería quitar solo el producto indicado')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/favoritos/${creado.id}`, {
+      method: 'DELETE',
+    })
+    verificar(res.status === 404 && typeof body.error === 'string', 'DELETE favorito inexistente debería responder 404')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios/999999999/favoritos')
+    verificar(res.status === 404 && typeof body.error === 'string', 'GET favoritos de usuario inexistente debería responder 404')
+  }
+
+  {
+    const snapshot = {
+      calle: direccionInicial.calle,
+      numero: direccionInicial.numero,
+      localidad: direccionInicial.localidad,
+      codigoPostal: direccionInicial.codigoPostal,
+      provincia: direccionInicial.provincia,
+      pais: direccionInicial.pais,
+    }
+    const pedido = await pool.query(
+      `INSERT INTO pedido
+         (id_usuario, id_direccion, direccion_snapshot, estado, subtotal, descuento, costo_envio, total)
+       VALUES ($1, $2, $3::jsonb, 'pendiente', 1200, 100, 50, 1150)
+       RETURNING id_pedido`,
+      [usuarioPruebaId, direccionesPruebaIds[0], JSON.stringify(snapshot)],
+    )
+    pedidoPruebaId = String(pedido.rows[0].id_pedido)
+    await pool.query(
+      `INSERT INTO item_pedido
+         (id_pedido, id_variante, sku_snapshot, nombre_snapshot, cantidad, precio_unitario, subtotal)
+       VALUES ($1, NULL, 'SMOKE-ORDER', 'Producto smoke', 1, 1200, 1200)`,
+      [pedidoPruebaId],
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}/pedidos`)
+    verificar(res.status === 200 && body.length === 1, 'GET pedidos debería devolver los pedidos del usuario')
+    verificar(
+      body[0].id === pedidoPruebaId &&
+        body[0].estado === 'pendiente' &&
+        body[0].total === 1150 &&
+        body[0].direccionSnapshot.calle === direccionInicial.calle,
+      'GET pedidos debería devolver totales, estado y snapshot',
+    )
+    verificar(
+      body[0].items.length === 1 &&
+        body[0].items[0].nombre === 'Producto smoke' &&
+        body[0].items[0].precioUnitario === 1200,
+      'GET pedidos debería incluir sus ítems',
+    )
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${segundoUsuarioPruebaId}/pedidos`)
+    verificar(res.status === 200 && Array.isArray(body) && body.length === 0, 'GET pedidos de usuario sin pedidos debería devolver []')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios/0/pedidos')
+    verificar(res.status === 400 && typeof body.error === 'string', 'GET pedidos con id inválido debería responder 400')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios/999999999/pedidos')
+    verificar(res.status === 404 && typeof body.error === 'string', 'GET pedidos de usuario inexistente debería responder 404')
   }
 
   // GET colección con datos (incluye el segundo)
@@ -1362,6 +1709,54 @@ try {
     verificar(res.status === 404 && typeof body.error === 'string', 'DELETE /categorias inexistente debería responder 404')
   }
 
+  {
+    const { res } = await fetchJson(
+      base,
+      `/usuarios/${segundoUsuarioPruebaId}/direcciones/${direccionesPruebaIds[0]}`,
+      { method: 'DELETE' },
+    )
+    verificar(res.status === 204, 'DELETE dirección compartida debería desasociar al usuario indicado')
+    const conservada = await pool.query(
+      'SELECT id_direccion FROM direccion WHERE id_direccion = $1',
+      [direccionesPruebaIds[0]],
+    )
+    verificar(conservada.rowCount === 1, 'una dirección referenciada por un pedido debe conservarse')
+  }
+
+  {
+    const { res, body } = await fetchJson(
+      base,
+      `/usuarios/${usuarioPruebaId}/direcciones/${direccionSecundaria.id}`,
+      { method: 'DELETE' },
+    )
+    verificar(res.status === 204 && body === '', 'DELETE dirección secundaria debería responder 204')
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}`, { method: 'DELETE' })
+    verificar(res.status === 409 && typeof body.error === 'string', 'DELETE usuario con pedidos debería responder 409')
+  }
+
+  await pool.query('DELETE FROM pedido WHERE id_pedido = $1', [pedidoPruebaId])
+  pedidoPruebaId = null
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${usuarioPruebaId}`, { method: 'DELETE' })
+    verificar(res.status === 204 && body === '', 'DELETE usuario sin pedidos debería responder 204')
+    usuarioPruebaId = null
+  }
+
+  {
+    const { res, body } = await fetchJson(base, `/usuarios/${segundoUsuarioPruebaId}`, { method: 'DELETE' })
+    verificar(res.status === 204 && body === '', 'DELETE segundo usuario debería responder 204')
+    segundoUsuarioPruebaId = null
+  }
+
+  {
+    const { res, body } = await fetchJson(base, '/usuarios/999999999', { method: 'DELETE' })
+    verificar(res.status === 404 && typeof body.error === 'string', 'DELETE usuario inexistente debería responder 404')
+  }
+
   // Ruta inexistente → 404
   {
     const { res, body } = await fetchJson(base, '/ruta-inexistente')
@@ -1369,7 +1764,7 @@ try {
     verificar(body.error === 'Ruta no encontrada', 'ruta inexistente debería devolver "Ruta no encontrada"')
   }
 
-  process.stdout.write('[OK] smoke: imágenes, categorías y productos/variantes sobre el DDL oficial; contratos, persistencia y errores verificados\n')
+  process.stdout.write('[OK] smoke: usuarios, direcciones, pedidos, favoritos, imágenes, categorías y productos sobre el DDL oficial\n')
 } catch (error) {
   process.stderr.write(`[FAIL] smoke: ${error.message}\n`)
   process.exitCode = 1
@@ -1383,6 +1778,25 @@ try {
     await pool.query('DELETE FROM banners WHERE titulo = $1', [`Banner smoke ${sufijoPrueba}`])
   }
   await restaurarConfiguracionPrueba()
+  if (pedidoPruebaId) {
+    await pool.query('DELETE FROM pedido WHERE id_pedido = $1', [pedidoPruebaId])
+  }
+  if (usuariosPruebaIds.length > 0) {
+    await pool.query('DELETE FROM usuario WHERE id_usuario = ANY($1::bigint[])', [usuariosPruebaIds])
+  }
+  if (direccionesPruebaIds.length > 0) {
+    await pool.query(
+      `DELETE FROM direccion d
+       WHERE d.id_direccion = ANY($1::bigint[])
+         AND NOT EXISTS (
+           SELECT 1 FROM usuario_direccion ud WHERE ud.id_direccion = d.id_direccion
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM pedido p WHERE p.id_direccion = d.id_direccion
+         )`,
+      [direccionesPruebaIds],
+    )
+  }
   const productosPrueba = [productoPruebaId, otroProductoPruebaId].filter(Boolean)
   if (productosPrueba.length > 0) {
     await pool.query('DELETE FROM producto WHERE id_producto = ANY($1::bigint[])', [productosPrueba])

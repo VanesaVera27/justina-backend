@@ -187,7 +187,73 @@ respuestas.
 - `DELETE /banners/:id` responde `204` sin cuerpo. Los ids inválidos responden
   `400` y los banners inexistentes `404`.
 
-## 11. Smoke
+## 11. Usuarios
+
+- `GET /usuarios` devuelve un array de usuarios; `GET /usuarios/:id` devuelve
+  un usuario. Los campos públicos son `id` (string), `nombre`, `apellido`,
+  `email`, `emailVerificado`, `idRol` (string), `fechaCreacion` (ISO 8601),
+  `dni`, `telefono` y `activo`. `fechaCreacion` puede ser `null` si el dato
+  heredado no está cargado.
+- `POST /usuarios` recibe `nombre`, `apellido`, `email`, `contrasena` e
+  `idRol` obligatorios. `emailVerificado` es booleano y por defecto `false`,
+  `dni`/`telefono` aceptan texto o `null`, y `activo` es booleano y por defecto
+  `true`. `contrasena` se guarda con scrypt; ni el hash ni la contraseña se
+  devuelven en respuestas.
+- `PATCH /usuarios/:id` acepta cualquier subconjunto de los campos editables
+  de creación, incluida `contrasena`; `id` y `fechaCreacion` son de solo
+  lectura. No se aceptan campos desconocidos.
+- `DELETE /usuarios/:id` responde `204` sin cuerpo. Si el usuario tiene
+  pedidos, responde `409` para conservar el historial; otros datos que impidan
+  la eliminación también producen `409`.
+- Los ids inválidos responden `400`, los usuarios inexistentes `404`, el email
+  duplicado `409` y un `idRol` inexistente `400`.
+
+## 12. Direcciones de usuarios
+
+- `GET /usuarios/:usuarioId/direcciones` devuelve las direcciones asociadas
+  solamente a ese usuario. Cada objeto contiene `id` string, `calle`, `numero`,
+  `localidad`, `codigoPostal`, `provincia`, `pais`, `dpto` (`string` o `null`)
+  y `esPrincipal` (booleano).
+- `POST /usuarios/:usuarioId/direcciones` recibe calle, número, localidad,
+  código postal, provincia y país obligatorios; `dpto` acepta texto o `null`
+  y `esPrincipal` es opcional, por defecto `false`. Responde `201`.
+- `PATCH /usuarios/:usuarioId/direcciones/:direccionId` actualiza parcialmente
+  esos campos y devuelve la dirección actualizada. Al marcar una dirección
+  como principal, las demás del usuario dejan de serlo; puede haber cero o una
+  principal. Si la dirección está compartida, los cambios de sus datos crean
+  una copia para el usuario y conservan intactas las otras asociaciones.
+- `DELETE /usuarios/:usuarioId/direcciones/:direccionId` desasocia la
+  dirección y responde `204`. La fila se elimina solo cuando ya no está
+  asociada a ningún usuario ni referenciada por un pedido.
+- Los ids inválidos responden `400`; usuario inexistente o dirección no
+  asociada a ese usuario responden `404`.
+
+## 13. Pedidos de usuarios
+
+- `GET /usuarios/:usuarioId/pedidos` devuelve un array ordenado por fecha
+  descendente. Cada pedido incluye `id`, `estado`, `direccionId` string o
+  `null`, `direccionSnapshot`, `subtotal`, `descuento`, `costoEnvio`, `total`,
+  `fecha` ISO 8601 o `null`, y `items`.
+- Cada ítem contiene `id` string, `varianteId` string o `null`, `sku`, `nombre`,
+  `cantidad`, `precioUnitario` y `subtotal`. Los importes son números.
+- Un usuario existente sin pedidos recibe `200` con `[]`; id inválido responde
+  `400` y usuario inexistente `404`. Esta ruta es de solo lectura.
+
+## 14. Favoritos de usuarios
+
+- `GET /usuarios/:usuarioId/favoritos` devuelve un array de productos
+  favoritos: `id` string, `nombre`, `descripcion`, `marca`, `categoriaId`
+  string o `null`, `fotoPortadaUrl` y `esDestacado`. Si aún no hay lista,
+  devuelve `[]`.
+- `POST /usuarios/:usuarioId/favoritos` recibe `{ "productoId": "<id>" }`,
+  crea la lista si hace falta y responde `201` con `{ "productoId": "<id>" }`.
+  Agregar dos veces el mismo producto responde `409`.
+- `DELETE /usuarios/:usuarioId/favoritos/:productoId` quita solo ese favorito
+  del usuario y responde `204` sin cuerpo. Si el usuario o producto no existe,
+  responde `404`; un favorito que no pertenece a la lista responde `404`.
+- Los ids inválidos o un body incorrecto responden `400`.
+
+## 15. Smoke
 
 - `scripts/smoke.js` debe cubrir cada endpoint nuevo: status,
   `Content-Type`, forma del body y al menos un caso de error.

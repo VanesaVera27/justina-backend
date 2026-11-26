@@ -313,6 +313,91 @@
         "docs/http.md describe el contrato nuevo y ./init.sh termina verde"
       ],
       "status": "done"
+<<<<<<< Updated upstream
+=======
+    },
+    {
+      "name": "productos-es-destacado",
+      "title": "Exponer esDestacado en la API de productos",
+      "description": "Hacer que el booleano de producto destacado exista de punta a punta en la API: GET /productos y GET /productos/:id lo devuelven, POST lo acepta con default false y PATCH /productos/:id lo acepta y persiste. La columna es_destacado ya esta en db/schema.sql:111 (y los inserts ya la escriben), pero falta en el mapper filasAProducto, en los SELECT/INSERT/UPDATE de productoRepository.js y en la whitelist CAMPOS_EDITABLES de src/domain/producto.js, que hoy responde 400 'El campo esDestacado no es editable o no existe'. Seguir el patron exacto de categoria esDestacada: default false en crearProducto, validacion estricta typeof === 'boolean' con error 400, mapeo Boolean(fila.es_destacado) y persistencia. Agregar un ALTER TABLE producto ADD COLUMN IF NOT EXISTS es_destacado BOOLEAN DEFAULT FALSE idempotente como los ya existentes en db/schema.sql:176 y :283, porque la base actual ya fue creada. Actualizar docs/http.md con el campo en el contrato de productos y extender scripts/smoke.js con el flujo completo (default en POST, PATCH true y false, GET individual y coleccion, y 400 por tipo invalido). No tocar servicios, controladores ni rutas (son pass-through), ni el frontend, ni la coleccion Postman.",
+      "acceptance": [
+        "GET /productos y GET /productos/:id devuelven esDestacado como booleano real, false para los productos que no lo tenian marcado",
+        "POST /productos acepta esDestacado con default false y PATCH /productos/:id acepta true/false, valida el tipo con 400 { error } si no es booleano y persiste el cambio",
+        "db/schema.sql conserva la columna es_destacado y agrega un ALTER TABLE ... ADD COLUMN IF NOT EXISTS idempotente para bases ya creadas",
+        "scripts/smoke.js cubre default en POST, PATCH true y false, GET individual y coleccion con el valor persistido y el caso de error 400; ./init.sh termina verde",
+        "docs/http.md documenta esDestacado en el contrato de productos; sin cambios en servicios, controladores, rutas ni frontend"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "configuracion-url-logo",
+      "title": "Agregar urlLogo a la configuración de la tienda",
+      "description": "Agregar urlLogo al contrato de GET/PUT /configuracion. Hoy el campo está fuera de la whitelist del dominio y PUT responde 400 'El campo \"urlLogo\" no es editable o no existe'. El frontend envía siempre el payload de la configuración más urlLogo: null cuando no hay logo o cuando el admin aprieta 'Quitar', y un string con la URL relativa devuelta por POST /imagenes (ej. /imagenes/logo-abc.png). Debe aceptarse como campo obligatorio de tipo string | null (se suma a CAMPOS y a los campos requeridos), persistirse en configuracion_web junto al resto de los campos (clave url_logo) y devolverse tal cual en GET y en la respuesta del PUT, sin normalizarla ni resolverla. No requiere endpoint nuevo, cambios en POST /imagenes ni lógica especial de rebuild: el frontend lee la configuración del API en runtime. Actualizar docs/http.md y scripts/smoke.js.",
+      "acceptance": [
+        "GET /configuracion devuelve \"urlLogo\": null si no hay logo registrado, o la URL guardada como string, sin normalizarla ni resolverla",
+        "PUT /configuracion acepta urlLogo como campo obligatorio string | null, agregado a la whitelist y a los campos requeridos; null es válido para quitar el logo y no responde error; un tipo inválido responde 400 con { \"error\": \"...\" }",
+        "El valor se persiste en configuracion_web junto al resto de los campos y se recupera en la respuesta del PUT y en un GET posterior",
+        "El string se guarda y devuelve tal cual lo envió el frontend (ej. /imagenes/logo-abc.png), sin reescribirlo ni validar formato de URL",
+        "docs/http.md documenta urlLogo en el contrato de /configuracion y scripts/smoke.js cubre PUT con URL, PUT con null, GET con valor guardado y con null, y el 400 por tipo inválido, restaurando el valor previo de la configuración",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "usuarios-crud",
+      "title": "Crear y gestionar usuarios",
+      "description": "Implementar GET/POST /usuarios, GET/PATCH/DELETE /usuarios/:id con PostgreSQL y el DDL vigente. Aceptar los campos de negocio nombre, apellido, email, contrasena (texto, hasheada con scrypt en el backend), idRol, emailVerificado, dni, telefono y activo; id y fechaCreacion son generados/solo lectura, y passwordHash nunca se devuelve. Validar entradas, mapear email duplicado a 409 y no permitir borrar usuarios con pedidos; conservar el historial y responder 409 en ese caso. Actualizar docs/http.md y scripts/smoke.js.",
+      "acceptance": [
+        "GET /usuarios devuelve un array y GET /usuarios/:id devuelve los campos públicos camelCase con id string y fechaCreacion ISO; nunca expone contrasena ni passwordHash",
+        "POST crea un usuario con hash scrypt de la contraseña, PATCH actualiza parcialmente los campos editables y permite cambiar contraseña, y DELETE elimina el registro cuando no tiene pedidos; statuses 201/200/204",
+        "Cuerpos, campos, tipos e ids inválidos responden 400; usuario inexistente 404; email duplicado o usuario con pedidos 409",
+        "El hash nunca se almacena en texto plano ni se incluye en ninguna respuesta",
+        "docs/http.md y scripts/smoke.js cubren los contratos, persistencia, validaciones y errores",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "direcciones-usuario-crud",
+      "title": "Gestionar direcciones por usuario",
+      "description": "Implementar GET/POST /usuarios/:usuarioId/direcciones y PATCH/DELETE /usuarios/:usuarioId/direcciones/:direccionId usando direccion y usuario_direccion. Las operaciones son siempre dentro de la relación del usuario. Editar las columnas de la dirección y mantener como máximo una dirección principal por usuario. Eliminar desasocia la dirección del usuario y borra la fila solo si no queda asociada a otro usuario ni referenciada por un pedido. Actualizar docs/http.md y scripts/smoke.js.",
+      "acceptance": [
+        "La lista devuelve solo las direcciones asociadas al usuario, con ids string y campos camelCase",
+        "POST crea la dirección y su asociación en una transacción; PATCH actualiza campos y esPrincipal; DELETE desasocia sin afectar asociaciones de otros usuarios ni snapshots de pedidos",
+        "Usuario/dirección inexistente devuelve 404, cuerpos/ids/campos inválidos 400",
+        "La principalidad se mantiene consistente por usuario y las operaciones se persisten en PostgreSQL",
+        "docs/http.md y scripts/smoke.js cubren contratos, errores y limpieza aislada",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "pedidos-usuario-lectura",
+      "title": "Listar pedidos de un usuario",
+      "description": "Implementar GET /usuarios/:usuarioId/pedidos para devolver los pedidos del usuario con sus ítems, snapshots, totales y fechas, consultando pedido e item_pedido. Es una ruta de lectura; no permite crear, editar ni borrar pedidos. Validar el usuario, devolver [] si existe y no tiene pedidos, y 404 si no existe. Actualizar docs/http.md y scripts/smoke.js.",
+      "acceptance": [
+        "GET devuelve solo pedidos del usuario, ordenados por fecha descendente, con ítems y campos camelCase, ids string, importes numéricos y fechas ISO o null",
+        "Usuario existente sin pedidos responde 200 con []; usuario inexistente 404 y id inválido 400",
+        "La lectura no modifica datos y no requiere cambios al esquema",
+        "docs/http.md y scripts/smoke.js cubren contratos y errores",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+    },
+    {
+      "name": "favoritos-usuario",
+      "title": "Consultar y gestionar favoritos de un usuario",
+      "description": "Implementar GET /usuarios/:usuarioId/favoritos para listar productos y POST /usuarios/:usuarioId/favoritos con { productoId } para agregar uno, junto con DELETE /usuarios/:usuarioId/favoritos/:productoId para quitarlo. Usar lista_favoritos/favorito_item; GET sin lista devuelve [], duplicados 409 y producto/usuario inexistente 404. Actualizar docs/http.md y scripts/smoke.js.",
+      "acceptance": [
+        "GET devuelve array JSON de productos favoritos con ids string, sin exponer claves internas de la lista",
+        "POST crea la lista si falta y agrega un producto; DELETE elimina solo el favorito de ese usuario y responde 204",
+        "Ids/body inválidos 400, recurso inexistente 404, favorito duplicado 409",
+        "Las operaciones no alteran favoritos de otros usuarios y persisten en PostgreSQL",
+        "docs/http.md y scripts/smoke.js cubren contratos, errores y limpieza aislada",
+        "./init.sh termina verde (lint + smoke)"
+      ],
+      "status": "done"
+>>>>>>> Stashed changes
     }
   ]
 }
